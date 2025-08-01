@@ -1,0 +1,57 @@
+name: Build and Push Docker Image
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Set up Python (no need for full Anaconda in CI)
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # Install huggingface_hub CLI
+      - name: Install huggingface_hub CLI
+        run: pip install -U "huggingface_hub[cli]"
+
+      # Authenticate with HuggingFace
+      - name: Login to HuggingFace
+        run: huggingface-cli login --token ${{ secrets.HF_TOKEN }}
+
+      # Cache the downloaded model directory
+      - name: Cache HuggingFace model
+        id: cache-model
+        uses: actions/cache@v4
+        with:
+          path: app/models/google/gemma-3n-E2B-it
+          key: gemma-3n-model-${{ hashFiles('**/docker-image.yml') }}
+
+      # Download the model if not cached
+      - name: Download Gemma 3n model
+        if: steps.cache-model.outputs.cache-hit != 'true'
+        run: |
+          huggingface-cli download google/gemma-3n-E2B-it --local-dir app/models/google/gemma-3n-E2B-it
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: grctest/g3n-fastapi-webcam-docker:latest
