@@ -12,6 +12,7 @@ import { agentStore } from "@/stores/agentStore";
 import { defaultPersonas } from "@/personas/defaultPersonas";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Eraser } from 'lucide-react';
+import { initializeAgent } from "@/lib/api.js";
 
 export function PersonaForm({ open, onOpenChange, persona: initialPersona, editMode = false, agentId, onSave }) {
     const { t } = useTranslation(locale.get(), { i18n: i18nInstance });
@@ -21,6 +22,14 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
     const [label, setLabel] = useState('');
     const [description, setDescription] = useState('');
     const [systemPrompt, setSystemPrompt] = useState('');
+    const [userPrompt, setUserPrompt] = useState('');
+    const [device, setDevice] = useState('auto');
+    const [temperature, setTemperature] = useState(0.8);
+    const [maxLength, setMaxLength] = useState(512);
+    const [loadIn4bit, setLoadIn4bit] = useState(true);
+    const [topP, setTopP] = useState(0.9);
+    const [topK, setTopK] = useState(50);
+    const [doSample, setDoSample] = useState(true);
     const personas = defaultPersonas;
     const [errors, setErrors] = useState({});
     const [isSaving, setIsSaving] = useState(false);
@@ -36,32 +45,56 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
             setLabel(initialPersona.label || '');
             setDescription(initialPersona.description || '');
             setSystemPrompt(initialPersona.systemPrompt || '');
-            setInterval(initialPersona.interval || 10);
+            setUserPrompt(initialPersona.userPrompt || 'What do you see in this image?');
+            setDevice(initialPersona.device || 'auto');
+            setTemperature(initialPersona.temperature || 0.8);
+            setMaxLength(initialPersona.maxLength || 512);
+            setLoadIn4bit(initialPersona.loadIn4bit !== undefined ? initialPersona.loadIn4bit : true);
+            setTopP(initialPersona.topP || 0.9);
+            setTopK(initialPersona.topK || 50);
+            setDoSample(initialPersona.doSample !== undefined ? initialPersona.doSample : true);
+            setInterval(initialPersona.interval || getDefaultInterval(initialPersona.device || 'auto'));
         } else {
             setIsCustom(true);
             setSelectedPersonaId('custom');
             setLabel('');
             setDescription('');
             setSystemPrompt('');
-            setInterval(10);
+            setUserPrompt('What do you see in this image?');
+            setDevice('auto');
+            setTemperature(0.8);
+            setMaxLength(512);
+            setLoadIn4bit(true);
+            setTopP(0.9);
+            setTopK(50);
+            setDoSample(true);
+            setInterval(getDefaultInterval('auto'));
         }
     }, [initialPersona, agentId, personas]);
 
-    const handleClearCache = async () => {
-        console.log('[DEBUG] Clearing Hugging Face cache...');
-        const result = await window.electron.clearHFCache();
-        if (result.success) {
-            toast({
-                title: "Cache Cleared",
-                description: "The model cache has been cleared. Please restart the application to re-download models.",
-            });
-        } else {
-            toast({
-                title: "Cache Clear Failed",
-                description: `Could not clear the cache: ${result.error}`,
-                variant: "destructive",
-            });
+    // Helper function to get default interval based on device
+    const getDefaultInterval = (selectedDevice) => {
+        switch(selectedDevice) {
+            case 'cpu': return 30; // Slower for CPU
+            case 'cuda': return 10; // Faster for GPU
+            case 'auto': return 15; // Medium for auto-detect
+            default: return 15;
         }
+    };
+
+    // Update interval when device changes
+    useEffect(() => {
+        if (!initialPersona) { // Only auto-update for new agents
+            setInterval(getDefaultInterval(device));
+        }
+    }, [device, initialPersona]);
+
+    const handleClearCache = async () => {
+        console.log('[DEBUG] Clear cache functionality removed - models managed by Docker container');
+        toast({
+            title: "Cache Management",
+            description: "Model cache is managed by the Docker container. Restart the container to clear cache.",
+        });
     };
 
     const validate = () => {
@@ -70,6 +103,11 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
         if (!label.trim()) newErrors.label = t('PersonaForm:labelRequired');
         if (!description.trim()) newErrors.description = t('PersonaForm:descriptionRequired');
         if (!systemPrompt.trim()) newErrors.systemPrompt = t('PersonaForm:promptRequired');
+        if (!userPrompt.trim()) newErrors.userPrompt = 'User prompt is required';
+        if (temperature < 0 || temperature > 2) newErrors.temperature = 'Temperature must be between 0 and 2';
+        if (maxLength < 1 || maxLength > 8192) newErrors.maxLength = 'Max length must be between 1 and 8192';
+        if (topP < 0 || topP > 1) newErrors.topP = 'Top-p must be between 0 and 1';
+        if (topK < 1) newErrors.topK = 'Top-k must be at least 1';
         setErrors(newErrors);
         return Object.keys(newErrors).length === 0;
     };
@@ -78,6 +116,7 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
     const handleLabelChange = (e) => setLabel(e.target.value);
     const handleDescriptionChange = (e) => setDescription(e.target.value);
     const handleSystemPromptChange = (e) => setSystemPrompt(e.target.value);
+    const handleUserPromptChange = (e) => setUserPrompt(e.target.value);
 
     const handleSelectChange = (value) => {
         setSelectedPersonaId(value);
@@ -86,6 +125,14 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
             setLabel('');
             setDescription('');
             setSystemPrompt('');
+            setUserPrompt('What do you see in this image?');
+            setDevice('auto');
+            setTemperature(0.8);
+            setMaxLength(512);
+            setLoadIn4bit(true);
+            setTopP(0.9);
+            setTopK(50);
+            setDoSample(true);
         } else {
             setIsCustom(false);
             const selected = personas.find(p => p.id === value);
@@ -93,6 +140,14 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
                 setLabel(selected.label || '');
                 setDescription(selected.description || '');
                 setSystemPrompt(selected.systemPrompt || '');
+                setUserPrompt(selected.userPrompt || 'What do you see in this image?');
+                setDevice(selected.device || 'auto');
+                setTemperature(selected.temperature || 0.8);
+                setMaxLength(selected.maxLength || 512);
+                setLoadIn4bit(selected.loadIn4bit !== undefined ? selected.loadIn4bit : true);
+                setTopP(selected.topP || 0.9);
+                setTopK(selected.topK || 50);
+                setDoSample(selected.doSample !== undefined ? selected.doSample : true);
             }
         }
     };
@@ -115,6 +170,14 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
                     label: xss(label),
                     description: xss(description),
                     systemPrompt: xss(systemPrompt),
+                    userPrompt: xss(userPrompt),
+                    device: device,
+                    temperature: temperature,
+                    maxLength: maxLength,
+                    loadIn4bit: loadIn4bit,
+                    topP: topP,
+                    topK: topK,
+                    doSample: doSample,
                     interval: interval,
                     paused: true,
                     id: initialPersona?.id || `agent-${Date.now()}`
@@ -123,6 +186,13 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
                 const selected = personas.find(p => p.id === selectedPersonaId);
                 agentData = {
                     ...selected,
+                    device: device,
+                    temperature: temperature,
+                    maxLength: maxLength,
+                    loadIn4bit: loadIn4bit,
+                    topP: topP,
+                    topK: topK,
+                    doSample: doSample,
                     interval: interval,
                     paused: true,
                     id: initialPersona?.id || `agent-${Date.now()}`
@@ -131,21 +201,19 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
             // Debug log
             console.log('Saving agent:', agentData);
 
-            // Initialize agent in the backend
-            if (window.electron?.agentInit) {
-                console.log('Initializing agent in backend...');
-                const result = await window.electron.agentInit(agentData);
-                if (!result.success) {
-                    toast({
-                        title: t('PersonaForm:backendErrorTitle') || 'Backend Error',
-                        description: result.error || t('PersonaForm:backendErrorDescription') || 'Could not initialize agent in the backend.',
-                        variant: "destructive",
-                    });
-                    setIsSaving(false);
-                    return; // Stop if backend initialization fails
-                }
-                console.log('Agent initialized in backend:', result);
+            // Initialize agent via FastAPI endpoint
+            console.log('Initializing agent via FastAPI...');
+            const result = await initializeAgent(agentData);
+            if (!result.success) {
+                toast({
+                    title: t('PersonaForm:backendErrorTitle') || 'FastAPI Error',
+                    description: result.error || t('PersonaForm:backendErrorDescription') || 'Could not initialize agent via FastAPI.',
+                    variant: "destructive",
+                });
+                setIsSaving(false);
+                return; // Stop if FastAPI initialization fails
             }
+            console.log('Agent initialized via FastAPI:', result.data);
 
             const agents = agentStore.get();
             if (editMode && agentId) {
@@ -252,6 +320,158 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
                         </div>
                     </div>
 
+                    <div className="space-y-2">
+                        <Label htmlFor="userPrompt">User Prompt Template</Label>
+                        <Textarea
+                            id="userPrompt"
+                            name="userPrompt"
+                            value={userPrompt}
+                            onChange={handleUserPromptChange}
+                            placeholder="e.g., 'Detect fire in this image', 'What objects do you see?'"
+                            maxLength={500}
+                            className={`min-h-[80px] ${errors.userPrompt ? 'border-red-500' : ''}`}
+                        />
+                        <div className="text-xs text-muted-foreground flex justify-between">
+                            <span>{errors.userPrompt || 'This will be sent with each image for analysis'}</span>
+                            <span>{userPrompt.length} / 500</span>
+                        </div>
+                    </div>
+
+                    {/* Technical Configuration Section */}
+                    <div className="border-t pt-4">
+                        <h3 className="text-sm font-medium mb-3">Technical Configuration</h3>
+                        
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <Label htmlFor="device">Compute Device</Label>
+                                <Select value={device} onValueChange={setDevice}>
+                                    <SelectTrigger id="device">
+                                        <SelectValue placeholder="Select device" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="auto">Auto-detect</SelectItem>
+                                        <SelectItem value="cuda">GPU (CUDA)</SelectItem>
+                                        <SelectItem value="cpu">CPU Only</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                                <div className="text-xs text-muted-foreground">
+                                    GPU is faster, CPU is more compatible
+                                </div>
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label htmlFor="loadIn4bit">4-bit Quantization</Label>
+                                <Select value={loadIn4bit.toString()} onValueChange={val => setLoadIn4bit(val === 'true')}>
+                                    <SelectTrigger id="loadIn4bit">
+                                        <SelectValue placeholder="Select quantization" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="true">Enabled (~15GB RAM)</SelectItem>
+                                        <SelectItem value="false">Disabled (~20GB RAM)</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                                <div className="text-xs text-muted-foreground">
+                                    <div className="mb-1">
+                                        <span className="font-semibold">Enabled:</span> Uses ~15GB RAM, faster loading, slightly reduced quality
+                                    </div>
+                                    <div>
+                                        <span className="font-semibold">Disabled:</span> Uses ~20GB RAM, slower loading, full precision quality
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Generation Parameters Section */}
+                    <div className="border-t pt-4">
+                        <h3 className="text-sm font-medium mb-3">Generation Parameters</h3>
+                        
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                                <Label htmlFor="temperature">Temperature ({temperature})</Label>
+                                <input
+                                    type="range"
+                                    id="temperature"
+                                    min="0"
+                                    max="2"
+                                    step="0.1"
+                                    value={temperature}
+                                    onChange={(e) => setTemperature(parseFloat(e.target.value))}
+                                    className="w-full"
+                                />
+                                <div className="text-xs text-muted-foreground">
+                                    Lower = more focused, Higher = more creative
+                                </div>
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label htmlFor="maxLength">Max Response Length</Label>
+                                <Input
+                                    type="number"
+                                    id="maxLength"
+                                    value={maxLength}
+                                    onChange={(e) => setMaxLength(parseInt(e.target.value) || 512)}
+                                    min="1"
+                                    max="8192"
+                                    className={errors.maxLength ? 'border-red-500' : ''}
+                                />
+                                <div className="text-xs text-muted-foreground">
+                                    {errors.maxLength || 'Maximum tokens to generate (1-8192)'}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4 mt-4">
+                            <div className="space-y-2">
+                                <Label htmlFor="topP">Top-p ({topP})</Label>
+                                <input
+                                    type="range"
+                                    id="topP"
+                                    min="0"
+                                    max="1"
+                                    step="0.1"
+                                    value={topP}
+                                    onChange={(e) => setTopP(parseFloat(e.target.value))}
+                                    className="w-full"
+                                />
+                                <div className="text-xs text-muted-foreground">
+                                    Nucleus sampling threshold
+                                </div>
+                            </div>
+
+                            <div className="space-y-2">
+                                <Label htmlFor="topK">Top-k</Label>
+                                <Input
+                                    type="number"
+                                    id="topK"
+                                    value={topK}
+                                    onChange={(e) => setTopK(parseInt(e.target.value) || 50)}
+                                    min="1"
+                                    max="200"
+                                    className={errors.topK ? 'border-red-500' : ''}
+                                />
+                                <div className="text-xs text-muted-foreground">
+                                    {errors.topK || 'Top-k sampling limit (1-200)'}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="space-y-2 mt-4">
+                            <Label htmlFor="doSample">Sampling Mode</Label>
+                            <Select value={doSample.toString()} onValueChange={val => setDoSample(val === 'true')}>
+                                <SelectTrigger id="doSample">
+                                    <SelectValue placeholder="Select sampling mode" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="true">Sampling (More varied)</SelectItem>
+                                    <SelectItem value="false">Greedy (More deterministic)</SelectItem>
+                                </SelectContent>
+                            </Select>
+                            <div className="text-xs text-muted-foreground">
+                                Sampling uses temperature/top-p, greedy always picks most likely
+                            </div>
+                        </div>
+                    </div>
 
                     <div className="space-y-2">
                         <Label htmlFor="interval">{t('PersonaForm:interval')}</Label>
@@ -260,13 +480,33 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
                                 <SelectValue placeholder={t('PersonaForm:intervalPlaceholder') || 'Interval'} />
                             </SelectTrigger>
                             <SelectContent>
-                                <SelectItem value={10}>{t('PersonaForm:interval10') || '10s'}</SelectItem>
-                                <SelectItem value={20}>{t('PersonaForm:interval20') || '20s'}</SelectItem>
-                                <SelectItem value={30}>{t('PersonaForm:interval30') || '30s'}</SelectItem>
+                                {device === 'cpu' ? (
+                                    <>
+                                        <SelectItem value={30}>30s (Recommended for CPU)</SelectItem>
+                                        <SelectItem value={45}>45s</SelectItem>
+                                        <SelectItem value={60}>60s</SelectItem>
+                                    </>
+                                ) : device === 'cuda' ? (
+                                    <>
+                                        <SelectItem value={5}>5s (Fast GPU)</SelectItem>
+                                        <SelectItem value={10}>10s (Recommended for GPU)</SelectItem>
+                                        <SelectItem value={15}>15s</SelectItem>
+                                        <SelectItem value={20}>20s</SelectItem>
+                                    </>
+                                ) : (
+                                    <>
+                                        <SelectItem value={10}>10s</SelectItem>
+                                        <SelectItem value={15}>15s (Recommended for Auto)</SelectItem>
+                                        <SelectItem value={20}>20s</SelectItem>
+                                        <SelectItem value={30}>30s</SelectItem>
+                                    </>
+                                )}
                             </SelectContent>
                         </Select>
-                        <div className="text-xs text-muted-foreground flex justify-between">
-                            <span>{t('PersonaForm:intervalHelp') || 'Set how often this agent runs (seconds).'}</span>
+                        <div className="text-xs text-muted-foreground">
+                            <span>{t('PersonaForm:intervalHelp') || 'How often this agent runs.'}</span>
+                            {device === 'cpu' && <span className="text-orange-600 ml-2">CPU inference is slow - longer intervals recommended</span>}
+                            {device === 'cuda' && <span className="text-green-600 ml-2">GPU inference is fast - shorter intervals available</span>}
                         </div>
                     </div>
 
