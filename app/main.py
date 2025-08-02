@@ -63,18 +63,6 @@ app.add_middleware(
 # Get the path to the frontend dist folder
 frontend_dist_path = Path(__file__).parent.parent / "frontend" / "astroDist"
 if frontend_dist_path.exists():
-    # Mount static files (CSS, JS, images, etc.)
-    app.mount("/_astro", StaticFiles(directory=frontend_dist_path / "_astro"), name="astro")
-    app.mount("/locales", StaticFiles(directory=frontend_dist_path / "locales"), name="locales")
-    
-    # Serve favicon and other root level assets
-    @app.get("/favicon.svg")
-    async def favicon():
-        favicon_path = frontend_dist_path / "favicon.svg"
-        if favicon_path.exists():
-            return FileResponse(favicon_path)
-        raise HTTPException(status_code=404, detail="Favicon not found")
-    
     logger.info(f"Serving frontend static files from: {frontend_dist_path}")
 else:
     logger.warning(f"Frontend dist folder not found at: {frontend_dist_path}")
@@ -82,7 +70,7 @@ else:
 # --- API Endpoints ---
 
 @app.get(
-    "/initialize-gemma-instance",
+    "/api/initialize-gemma-instance",
     summary="Initialize a Single Gemma Instance",
     tags=["Instance Management"],
     operation_id="initialize_single_gemma_instance"
@@ -143,7 +131,7 @@ async def initialize_gemma_instance(
     return await handle_initialize_gemma_instance(request)
 
 @app.get(
-    "/chat",
+    "/api/chat",
     summary="Chat with a Gemma Instance",
     tags=["Interaction"],
     operation_id="chat_with_gemma_instance"
@@ -170,7 +158,7 @@ async def chat_with_gemma_instance(
     return await handle_chat_with_gemma_instance(request)
 
 @app.post(
-    "/analyze-image",
+    "/api/analyze-image",
     summary="Analyze an Image",
     tags=["Image Analysis"],
     operation_id="analyze_image_with_gemma"
@@ -243,7 +231,7 @@ def validate_image_content(file_content: bytes) -> tuple[int, int]:
         )
 
 @app.post(
-    "/analyze-image-multipart",
+    "/api/analyze-image-multipart",
     summary="Analyze an Image (Multipart Upload)",
     tags=["Image Analysis"],
     operation_id="analyze_image_multipart_with_gemma"
@@ -297,7 +285,7 @@ async def analyze_image_multipart_with_gemma(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 @app.get(
-    "/instance-status/{instance_id}",
+    "/api/instance-status/{instance_id}",
     summary="Get Instance Status",
     tags=["Instance Management"],
     operation_id="get_gemma_instance_status"
@@ -316,7 +304,7 @@ async def get_gemma_instance_status(instance_id: str = FastAPIPath(..., descript
 
 
 @app.get(
-    "/shutdown-instance/{instance_id}",
+    "/api/shutdown-instance/{instance_id}",
     summary="Shutdown Single Instance",
     tags=["Instance Management"],
     operation_id="shutdown_gemma_instance"
@@ -333,7 +321,7 @@ async def shutdown_gemma_instance(instance_id: str = FastAPIPath(..., descriptio
     return await handle_shutdown_instance(instance_id)
 
 @app.get(
-    "/shutdown-all-instances",
+    "/api/shutdown-all-instances",
     summary="Shutdown All Instances",
     tags=["Instance Management"],
     operation_id="shutdown_all_gemma_instances"
@@ -349,24 +337,32 @@ async def shutdown_all_gemma_instances():
     """
     return await handle_shutdown_all_instances()
 
-# --- Frontend Route (Catch-all for React App) ---
-@app.get("/{full_path:path}")
-async def serve_frontend(full_path: str):
-    """
-    Serve the React frontend for all non-API routes.
-    This ensures the React app handles client-side routing.
-    """
-    # If the frontend dist folder exists, serve the React app
-    if frontend_dist_path.exists():
-        index_path = frontend_dist_path / "index.html"
-        if index_path.exists():
-            return FileResponse(index_path)
-    
-    # Fallback if frontend is not available
-    raise HTTPException(
-        status_code=404, 
-        detail="Frontend not available. Please ensure the frontend is built and placed in frontend/astroDist/"
+# --- Frontend Static Files Configuration ---
+# Mount the entire frontend directory as static files with html=True
+# This handles all static assets and automatically serves index.html for non-matching paths
+if frontend_dist_path.exists():
+    app.mount(
+        "/", 
+        StaticFiles(directory=str(frontend_dist_path), html=True), 
+        name="frontend"
     )
+    
+    # Also mount locales at the legacy path that the frontend expects
+    locales_path = frontend_dist_path / "locales"
+    if locales_path.exists():
+        app.mount("/src/data/locales", StaticFiles(directory=str(locales_path)), name="legacy_locales")
+    
+    logger.info(f"Frontend mounted successfully from: {frontend_dist_path}")
+else:
+    logger.warning(f"Frontend dist folder not found at: {frontend_dist_path}")
+    
+    # Fallback route if frontend is not available
+    @app.get("/{full_path:path}")
+    async def frontend_not_available(full_path: str):
+        raise HTTPException(
+            status_code=404, 
+            detail="Frontend not available. Please ensure the frontend is built and placed in frontend/astroDist/"
+        )
 
 
 # Startup and shutdown events

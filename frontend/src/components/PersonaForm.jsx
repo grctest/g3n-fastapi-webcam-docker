@@ -11,7 +11,6 @@ import { useToast } from "@/hooks/use-toast";
 import { agentStore } from "@/stores/agentStore";
 import { defaultPersonas } from "@/personas/defaultPersonas";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { Eraser } from 'lucide-react';
 import { initializeAgent } from "@/lib/api.js";
 
 export function PersonaForm({ open, onOpenChange, persona: initialPersona, editMode = false, agentId, onSave }) {
@@ -88,14 +87,6 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
             setInterval(getDefaultInterval(device));
         }
     }, [device, initialPersona]);
-
-    const handleClearCache = async () => {
-        console.log('[DEBUG] Clear cache functionality removed - models managed by Docker container');
-        toast({
-            title: "Cache Management",
-            description: "Model cache is managed by the Docker container. Restart the container to clear cache.",
-        });
-    };
 
     const validate = () => {
         if (!isCustom) return true; // No validation needed if selecting an existing persona
@@ -241,14 +232,9 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="bg-white border border-black">
+            <DialogContent className="bg-white border border-black max-w-4xl w-[90vw] max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
-                    <div className="flex justify-between items-center">
-                        <DialogTitle>{initialPersona ? t('PersonaForm:editTitle') : t('PersonaForm:createTitle')}</DialogTitle>
-                        <Button variant="ghost" size="icon" onClick={handleClearCache} title="Clear model cache">
-                            <Eraser className="w-5 h-5" />
-                        </Button>
-                    </div>
+                    <DialogTitle>{initialPersona ? t('PersonaForm:editTitle') : t('PersonaForm:createTitle')}</DialogTitle>
                     <DialogDescription>{t('PersonaForm:description')}</DialogDescription>
                 </DialogHeader>
                 <div className="space-y-6">
