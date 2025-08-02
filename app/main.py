@@ -3,11 +3,14 @@ import os
 import logging
 import base64
 from typing import List
-import magic
 from PIL import Image
 import io
+from pathlib import Path
 
-from fastapi import FastAPI, Query, HTTPException, Body, status, Path, File, UploadFile, Form
+from fastapi import FastAPI, Query, HTTPException, Body, status, Path as FastAPIPath, File, UploadFile, Form
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 from .lib.models import (
     ModelEnum, DeviceEnum, GemmaInstanceConfig, InitializeGemmaRequest, 
@@ -46,6 +49,37 @@ app = FastAPI(
         "url": "https://opensource.org/licenses/MIT",
     },
 )
+
+# --- CORS Configuration ---
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # In production, specify actual origins
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# --- Static Files Configuration ---
+# Get the path to the frontend dist folder
+frontend_dist_path = Path(__file__).parent.parent / "frontend" / "astroDist"
+if frontend_dist_path.exists():
+    # Mount static files (CSS, JS, images, etc.)
+    app.mount("/_astro", StaticFiles(directory=frontend_dist_path / "_astro"), name="astro")
+    app.mount("/locales", StaticFiles(directory=frontend_dist_path / "locales"), name="locales")
+    
+    # Serve favicon and other root level assets
+    @app.get("/favicon.svg")
+    async def favicon():
+        favicon_path = frontend_dist_path / "favicon.svg"
+        if favicon_path.exists():
+            return FileResponse(favicon_path)
+        raise HTTPException(status_code=404, detail="Favicon not found")
+    
+    logger.info(f"Serving frontend static files from: {frontend_dist_path}")
+else:
+    logger.warning(f"Frontend dist folder not found at: {frontend_dist_path}")
+
+# --- API Endpoints ---
 
 @app.get(
     "/initialize-gemma-instance",
@@ -180,16 +214,15 @@ def validate_image_file(file: UploadFile) -> None:
 def validate_image_content(file_content: bytes) -> tuple[int, int]:
     """Validate image content and return dimensions."""
     try:
-        # Use python-magic to verify actual file type
-        mime_type = magic.from_buffer(file_content, mime=True)
-        if mime_type not in ALLOWED_IMAGE_TYPES:
-            raise HTTPException(
-                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-                detail=f"File content doesn't match image type. Detected: {mime_type}"
-            )
-        
-        # Validate image with PIL
+        # Validate image with PIL and get format
         with Image.open(io.BytesIO(file_content)) as img:
+            # Check if it's a valid image format by checking the format
+            if img.format not in ['JPEG', 'PNG', 'GIF', 'BMP', 'WEBP', 'TIFF']:
+                raise HTTPException(
+                    status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                    detail=f"Unsupported image format: {img.format}. Allowed formats: JPEG, PNG, GIF, BMP, WEBP, TIFF"
+                )
+            
             width, height = img.size
             
             # Check dimensions
@@ -269,7 +302,7 @@ async def analyze_image_multipart_with_gemma(
     tags=["Instance Management"],
     operation_id="get_gemma_instance_status"
 )
-async def get_gemma_instance_status(instance_id: str = Path(..., description="Instance ID to check")):
+async def get_gemma_instance_status(instance_id: str = FastAPIPath(..., description="Instance ID to check")):
     """
     Get detailed status information for a specific Gemma instance.
 
@@ -288,7 +321,7 @@ async def get_gemma_instance_status(instance_id: str = Path(..., description="In
     tags=["Instance Management"],
     operation_id="shutdown_gemma_instance"
 )
-async def shutdown_gemma_instance(instance_id: str = Path(..., description="Instance ID to shutdown")):
+async def shutdown_gemma_instance(instance_id: str = FastAPIPath(..., description="Instance ID to shutdown")):
     """
     Shutdown a single Gemma instance to free resources.
 
@@ -316,6 +349,24 @@ async def shutdown_all_gemma_instances():
     """
     return await handle_shutdown_all_instances()
 
+# --- Frontend Route (Catch-all for React App) ---
+@app.get("/{full_path:path}")
+async def serve_frontend(full_path: str):
+    """
+    Serve the React frontend for all non-API routes.
+    This ensures the React app handles client-side routing.
+    """
+    # If the frontend dist folder exists, serve the React app
+    if frontend_dist_path.exists():
+        index_path = frontend_dist_path / "index.html"
+        if index_path.exists():
+            return FileResponse(index_path)
+    
+    # Fallback if frontend is not available
+    raise HTTPException(
+        status_code=404, 
+        detail="Frontend not available. Please ensure the frontend is built and placed in frontend/astroDist/"
+    )
 
 
 # Startup and shutdown events
