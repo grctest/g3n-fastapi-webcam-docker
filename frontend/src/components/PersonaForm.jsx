@@ -11,7 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { agentStore } from "@/stores/agentStore";
 import { defaultPersonas } from "@/personas/defaultPersonas";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { initializeAgent } from "@/lib/api.js";
+import { initializeAgent, getDeviceCapabilities } from "@/lib/api.js";
 
 export function PersonaForm({ open, onOpenChange, persona: initialPersona, editMode = false, agentId, onSave }) {
     const { t } = useTranslation(locale.get(), { i18n: i18nInstance });
@@ -23,17 +23,48 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
     const [systemPrompt, setSystemPrompt] = useState('');
     const [userPrompt, setUserPrompt] = useState('');
     const [device, setDevice] = useState('auto');
-    const [temperature, setTemperature] = useState(0.8);
     const [maxLength, setMaxLength] = useState(512);
     const [loadIn4bit, setLoadIn4bit] = useState(true);
-    const [topP, setTopP] = useState(0.9);
-    const [topK, setTopK] = useState(50);
-    const [doSample, setDoSample] = useState(true);
+    const [doSample, setDoSample] = useState(false); // Default to greedy sampling
     const personas = defaultPersonas;
     const [errors, setErrors] = useState({});
     const [isSaving, setIsSaving] = useState(false);
     const [interval, setInterval] = useState(initialPersona?.interval || 10);
+    const [deviceCapabilities, setDeviceCapabilities] = useState(null);
+    const [loadingCapabilities, setLoadingCapabilities] = useState(true);
     const { toast } = useToast();
+
+    // Fetch device capabilities on mount
+    useEffect(() => {
+        const fetchCapabilities = async () => {
+            setLoadingCapabilities(true);
+            try {
+                const capabilities = await getDeviceCapabilities();
+                setDeviceCapabilities(capabilities);
+                // If CUDA is not available and device is set to cuda, switch to cpu
+                if (!capabilities.cuda_available && (device === 'cuda' || device === 'auto')) {
+                    setDevice(capabilities.recommended_device);
+                }
+            } catch (error) {
+                console.error('Failed to fetch device capabilities:', error);
+                // Set safe defaults
+                setDeviceCapabilities({
+                    cuda_available: false,
+                    cpu_available: true,
+                    recommended_device: 'cpu'
+                });
+                if (device === 'cuda') {
+                    setDevice('cpu');
+                }
+            } finally {
+                setLoadingCapabilities(false);
+            }
+        };
+        
+        if (open) {
+            fetchCapabilities();
+        }
+    }, [open]);
 
     // Always update form state when persona or agentId changes
     useEffect(() => {
@@ -43,50 +74,65 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
             setSelectedPersonaId(isExisting ? initialPersona.id : 'custom');
             setLabel(initialPersona.label || '');
             setDescription(initialPersona.description || '');
-            setSystemPrompt(initialPersona.systemPrompt || '');
+            setSystemPrompt(initialPersona.systemPrompt || 'You are a helpful assistant.');
             setUserPrompt(initialPersona.userPrompt || 'What do you see in this image?');
             setDevice(initialPersona.device || 'auto');
-            setTemperature(initialPersona.temperature || 0.8);
             setMaxLength(initialPersona.maxLength || 512);
             setLoadIn4bit(initialPersona.loadIn4bit !== undefined ? initialPersona.loadIn4bit : true);
-            setTopP(initialPersona.topP || 0.9);
-            setTopK(initialPersona.topK || 50);
-            setDoSample(initialPersona.doSample !== undefined ? initialPersona.doSample : true);
+            setDoSample(initialPersona.doSample !== undefined ? initialPersona.doSample : false);
             setInterval(initialPersona.interval || getDefaultInterval(initialPersona.device || 'auto'));
         } else {
             setIsCustom(true);
             setSelectedPersonaId('custom');
             setLabel('');
             setDescription('');
-            setSystemPrompt('');
+            setSystemPrompt('You are a helpful assistant.');
             setUserPrompt('What do you see in this image?');
             setDevice('auto');
-            setTemperature(0.8);
             setMaxLength(512);
             setLoadIn4bit(true);
-            setTopP(0.9);
-            setTopK(50);
-            setDoSample(true);
+            setDoSample(false); // Default to greedy sampling
             setInterval(getDefaultInterval('auto'));
         }
     }, [initialPersona, agentId, personas]);
 
-    // Helper function to get default interval based on device
-    const getDefaultInterval = (selectedDevice) => {
-        switch(selectedDevice) {
-            case 'cpu': return 30; // Slower for CPU
-            case 'cuda': return 10; // Faster for GPU
-            case 'auto': return 15; // Medium for auto-detect
-            default: return 15;
-        }
+    // Helper function to calculate processing time based on max length and device
+    const calculateProcessingTime = (maxTokens, deviceType) => {
+        // 1-2 tokens per second base rate
+        const tokensPerSecond = deviceType === 'cuda' ? 2 : 1; // GPU is faster
+        return Math.ceil(maxTokens / tokensPerSecond);
     };
 
-    // Update interval when device changes
+    // Helper function to get default interval based on device and max_length
+    const getDefaultInterval = (selectedDevice, maxResponseLength = maxLength) => {
+        const effectiveDevice = deviceCapabilities?.cuda_available ? selectedDevice : 'cpu';
+        const processingTime = calculateProcessingTime(maxResponseLength, effectiveDevice);
+        
+        // Add buffer time (20% minimum)
+        const bufferTime = Math.max(10, Math.ceil(processingTime * 0.2));
+        return processingTime + bufferTime;
+    };
+
+    // Get interval options based on calculated processing time
+    const getIntervalOptions = () => {
+        const baseProcessingTime = calculateProcessingTime(maxLength, deviceCapabilities?.cuda_available ? device : 'cpu');
+        const minInterval = getDefaultInterval(device, maxLength);
+        
+        return [
+            { value: minInterval, label: `Optimal (${minInterval}s)`, description: "Based on processing time" },
+            { value: Math.ceil(minInterval * 1.5), label: `Conservative (${Math.ceil(minInterval * 1.5)}s)`, description: "50% extra buffer" },
+            { value: Math.ceil(minInterval * 2), label: `Relaxed (${Math.ceil(minInterval * 2)}s)`, description: "100% extra buffer" },
+            { value: Math.ceil(minInterval * 3), label: `Slow (${Math.ceil(minInterval * 3)}s)`, description: "Low resource usage" },
+        ];
+    };
+
+    // Update interval when device or maxLength changes
     useEffect(() => {
-        if (!initialPersona) { // Only auto-update for new agents
-            setInterval(getDefaultInterval(device));
+        if (!initialPersona && deviceCapabilities) { // Only auto-update for new agents when capabilities are loaded
+            const newInterval = getDefaultInterval(device, maxLength);
+            setInterval(newInterval);
         }
-    }, [device, initialPersona]);
+    }, [device, maxLength, deviceCapabilities, initialPersona]);
 
     const validate = () => {
         if (!isCustom) return true; // No validation needed if selecting an existing persona
@@ -95,10 +141,7 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
         if (!description.trim()) newErrors.description = t('PersonaForm:descriptionRequired');
         if (!systemPrompt.trim()) newErrors.systemPrompt = t('PersonaForm:promptRequired');
         if (!userPrompt.trim()) newErrors.userPrompt = 'User prompt is required';
-        if (temperature < 0 || temperature > 2) newErrors.temperature = 'Temperature must be between 0 and 2';
         if (maxLength < 1 || maxLength > 8192) newErrors.maxLength = 'Max length must be between 1 and 8192';
-        if (topP < 0 || topP > 1) newErrors.topP = 'Top-p must be between 0 and 1';
-        if (topK < 1) newErrors.topK = 'Top-k must be at least 1';
         setErrors(newErrors);
         return Object.keys(newErrors).length === 0;
     };
@@ -115,14 +158,11 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
             setIsCustom(true);
             setLabel('');
             setDescription('');
-            setSystemPrompt('');
+            setSystemPrompt('You are a helpful assistant.');
             setUserPrompt('What do you see in this image?');
             setDevice('auto');
-            setTemperature(0.8);
             setMaxLength(512);
             setLoadIn4bit(true);
-            setTopP(0.9);
-            setTopK(50);
             setDoSample(true);
         } else {
             setIsCustom(false);
@@ -130,14 +170,11 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
             if (selected) {
                 setLabel(selected.label || '');
                 setDescription(selected.description || '');
-                setSystemPrompt(selected.systemPrompt || '');
+                setSystemPrompt(selected.systemPrompt || 'You are a helpful assistant.');
                 setUserPrompt(selected.userPrompt || 'What do you see in this image?');
                 setDevice(selected.device || 'auto');
-                setTemperature(selected.temperature || 0.8);
                 setMaxLength(selected.maxLength || 512);
                 setLoadIn4bit(selected.loadIn4bit !== undefined ? selected.loadIn4bit : true);
-                setTopP(selected.topP || 0.9);
-                setTopK(selected.topK || 50);
                 setDoSample(selected.doSample !== undefined ? selected.doSample : true);
             }
         }
@@ -163,11 +200,8 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
                     systemPrompt: xss(systemPrompt),
                     userPrompt: xss(userPrompt),
                     device: device,
-                    temperature: temperature,
                     maxLength: maxLength,
                     loadIn4bit: loadIn4bit,
-                    topP: topP,
-                    topK: topK,
                     doSample: doSample,
                     interval: interval,
                     paused: true,
@@ -178,37 +212,46 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
                 agentData = {
                     ...selected,
                     device: device,
-                    temperature: temperature,
                     maxLength: maxLength,
                     loadIn4bit: loadIn4bit,
-                    topP: topP,
-                    topK: topK,
                     doSample: doSample,
                     interval: interval,
                     paused: true,
                     id: initialPersona?.id || `agent-${Date.now()}`
                 };
             }
-            // Debug log
-            console.log('Saving agent:', agentData);
 
-            // Initialize agent via FastAPI endpoint
-            console.log('Initializing agent via FastAPI...');
-            const result = await initializeAgent(agentData);
-            if (!result.success) {
-                toast({
-                    title: t('PersonaForm:backendErrorTitle') || 'FastAPI Error',
-                    description: result.error || t('PersonaForm:backendErrorDescription') || 'Could not initialize agent via FastAPI.',
-                    variant: "destructive",
-                });
-                setIsSaving(false);
-                return; // Stop if FastAPI initialization fails
-            }
-            console.log('Agent initialized via FastAPI:', result.data);
-
-            const agents = agentStore.get();
             if (editMode && agentId) {
-                // Update the existing agent by agentId
+                // For editing, we need to shutdown the old agent and reinitialize
+                console.log('Editing agent - shutting down old instance...');
+                
+                // Import shutdown function
+                const { shutdownAgent } = await import('@/lib/api.js');
+                
+                try {
+                    await shutdownAgent(agentId);
+                    console.log('Old agent instance shut down successfully');
+                } catch (shutdownError) {
+                    console.warn('Warning: Failed to shutdown old agent instance:', shutdownError);
+                    // Continue anyway - the new instance will use the same ID
+                }
+                
+                // Now initialize with new configuration
+                console.log('Initializing agent with new configuration via FastAPI...');
+                const result = await initializeAgent(agentData);
+                if (!result.success) {
+                    toast({
+                        title: t('PersonaForm:backendErrorTitle') || 'FastAPI Error',
+                        description: result.error || t('PersonaForm:backendErrorDescription') || 'Could not initialize agent via FastAPI.',
+                        variant: "destructive",
+                    });
+                    setIsSaving(false);
+                    return;
+                }
+                console.log('Agent reinitialized via FastAPI:', result.data);
+
+                // Update the existing agent in store
+                const agents = agentStore.get();
                 const updatedAgents = agents.map(agent =>
                     agent.id === agentId
                         ? { ...agent, ...agentData }
@@ -218,11 +261,30 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
                 console.log('Agent updated:', updatedAgents.find(a => a.id === agentId));
                 toast({ title: t('PersonaForm:agentUpdated') || 'Agent updated successfully!' });
             } else {
+                // Debug log
+                console.log('Saving agent:', agentData);
+
+                // Initialize agent via FastAPI endpoint
+                console.log('Initializing agent via FastAPI...');
+                const result = await initializeAgent(agentData);
+                if (!result.success) {
+                    toast({
+                        title: t('PersonaForm:backendErrorTitle') || 'FastAPI Error',
+                        description: result.error || t('PersonaForm:backendErrorDescription') || 'Could not initialize agent via FastAPI.',
+                        variant: "destructive",
+                    });
+                    setIsSaving(false);
+                    return; // Stop if FastAPI initialization fails
+                }
+                console.log('Agent initialized via FastAPI:', result.data);
+
                 // Add agent to agentStore
+                const agents = agentStore.get();
                 agentStore.set([...agents, agentData]);
                 console.log('Agent added:', agentData);
                 toast({ title: t('PersonaForm:agentAdded') || 'Agent added successfully!' });
             }
+            
             if (onSave) onSave(agentData); // Close dialog after save
             if (onOpenChange) onOpenChange(false); // Close dialog
         } finally {
@@ -330,18 +392,27 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
                         <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-2">
                                 <Label htmlFor="device">Compute Device</Label>
-                                <Select value={device} onValueChange={setDevice}>
+                                <Select value={device} onValueChange={setDevice} disabled={loadingCapabilities}>
                                     <SelectTrigger id="device">
-                                        <SelectValue placeholder="Select device" />
+                                        <SelectValue placeholder={loadingCapabilities ? "Loading..." : "Select device"} />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        <SelectItem value="auto">Auto-detect</SelectItem>
-                                        <SelectItem value="cuda">GPU (CUDA)</SelectItem>
-                                        <SelectItem value="cpu">CPU Only</SelectItem>
+                                        {loadingCapabilities ? (
+                                            <SelectItem value="loading" disabled>Loading capabilities...</SelectItem>
+                                        ) : (
+                                            <>
+                                                <SelectItem value="auto">Auto-detect</SelectItem>
+                                                {deviceCapabilities?.cuda_available && (
+                                                    <SelectItem value="cuda">GPU (CUDA)</SelectItem>
+                                                )}
+                                                <SelectItem value="cpu">CPU Only</SelectItem>
+                                            </>
+                                        )}
                                     </SelectContent>
                                 </Select>
                                 <div className="text-xs text-muted-foreground">
-                                    GPU is faster, CPU is more compatible
+                                    {loadingCapabilities ? "Checking device capabilities..." : 
+                                     deviceCapabilities?.cuda_available ? "GPU is faster, CPU is more compatible" : "GPU not available - CPU only"}
                                 </div>
                             </div>
 
@@ -352,7 +423,7 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
                                         <SelectValue placeholder="Select quantization" />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        <SelectItem value="true">Enabled (~15GB RAM)</SelectItem>
+                                        <SelectItem value="true">Enabled (~10GB RAM)</SelectItem>
                                         <SelectItem value="false">Disabled (~20GB RAM)</SelectItem>
                                     </SelectContent>
                                 </Select>
@@ -374,23 +445,6 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
                         
                         <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-2">
-                                <Label htmlFor="temperature">Temperature ({temperature})</Label>
-                                <input
-                                    type="range"
-                                    id="temperature"
-                                    min="0"
-                                    max="2"
-                                    step="0.1"
-                                    value={temperature}
-                                    onChange={(e) => setTemperature(parseFloat(e.target.value))}
-                                    className="w-full"
-                                />
-                                <div className="text-xs text-muted-foreground">
-                                    Lower = more focused, Higher = more creative
-                                </div>
-                            </div>
-
-                            <div className="space-y-2">
                                 <Label htmlFor="maxLength">Max Response Length</Label>
                                 <Input
                                     type="number"
@@ -407,41 +461,6 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-4 mt-4">
-                            <div className="space-y-2">
-                                <Label htmlFor="topP">Top-p ({topP})</Label>
-                                <input
-                                    type="range"
-                                    id="topP"
-                                    min="0"
-                                    max="1"
-                                    step="0.1"
-                                    value={topP}
-                                    onChange={(e) => setTopP(parseFloat(e.target.value))}
-                                    className="w-full"
-                                />
-                                <div className="text-xs text-muted-foreground">
-                                    Nucleus sampling threshold
-                                </div>
-                            </div>
-
-                            <div className="space-y-2">
-                                <Label htmlFor="topK">Top-k</Label>
-                                <Input
-                                    type="number"
-                                    id="topK"
-                                    value={topK}
-                                    onChange={(e) => setTopK(parseInt(e.target.value) || 50)}
-                                    min="1"
-                                    max="200"
-                                    className={errors.topK ? 'border-red-500' : ''}
-                                />
-                                <div className="text-xs text-muted-foreground">
-                                    {errors.topK || 'Top-k sampling limit (1-200)'}
-                                </div>
-                            </div>
-                        </div>
-
                         <div className="space-y-2 mt-4">
                             <Label htmlFor="doSample">Sampling Mode</Label>
                             <Select value={doSample.toString()} onValueChange={val => setDoSample(val === 'true')}>
@@ -454,45 +473,37 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
                                 </SelectContent>
                             </Select>
                             <div className="text-xs text-muted-foreground">
-                                Sampling uses temperature/top-p, greedy always picks most likely
+                                Sampling uses top-k, greedy always picks most likely
                             </div>
                         </div>
                     </div>
 
                     <div className="space-y-2">
                         <Label htmlFor="interval">{t('PersonaForm:interval')}</Label>
-                        <Select value={interval} onValueChange={val => setInterval(Number(val))}>
+                        <Select value={interval} onValueChange={val => setInterval(Number(val))} disabled={loadingCapabilities || !deviceCapabilities}>
                             <SelectTrigger id="interval">
-                                <SelectValue placeholder={t('PersonaForm:intervalPlaceholder') || 'Interval'} />
+                                <SelectValue placeholder={loadingCapabilities ? "Loading..." : (t('PersonaForm:intervalPlaceholder') || 'Interval')} />
                             </SelectTrigger>
                             <SelectContent>
-                                {device === 'cpu' ? (
-                                    <>
-                                        <SelectItem value={30}>30s (Recommended for CPU)</SelectItem>
-                                        <SelectItem value={45}>45s</SelectItem>
-                                        <SelectItem value={60}>60s</SelectItem>
-                                    </>
-                                ) : device === 'cuda' ? (
-                                    <>
-                                        <SelectItem value={5}>5s (Fast GPU)</SelectItem>
-                                        <SelectItem value={10}>10s (Recommended for GPU)</SelectItem>
-                                        <SelectItem value={15}>15s</SelectItem>
-                                        <SelectItem value={20}>20s</SelectItem>
-                                    </>
+                                {loadingCapabilities || !deviceCapabilities ? (
+                                    <SelectItem value="loading" disabled>Loading device info...</SelectItem>
                                 ) : (
-                                    <>
-                                        <SelectItem value={10}>10s</SelectItem>
-                                        <SelectItem value={15}>15s (Recommended for Auto)</SelectItem>
-                                        <SelectItem value={20}>20s</SelectItem>
-                                        <SelectItem value={30}>30s</SelectItem>
-                                    </>
+                                    getIntervalOptions().map(option => (
+                                        <SelectItem key={option.value} value={option.value}>
+                                            {option.label}
+                                        </SelectItem>
+                                    ))
                                 )}
                             </SelectContent>
                         </Select>
                         <div className="text-xs text-muted-foreground">
-                            <span>{t('PersonaForm:intervalHelp') || 'How often this agent runs.'}</span>
-                            {device === 'cpu' && <span className="text-orange-600 ml-2">CPU inference is slow - longer intervals recommended</span>}
-                            {device === 'cuda' && <span className="text-green-600 ml-2">GPU inference is fast - shorter intervals available</span>}
+                            <div>Set how often this agent runs (seconds).</div>
+                            {deviceCapabilities && !loadingCapabilities && (
+                                <div className="mt-1 text-blue-600">
+                                    Processing time: ~{calculateProcessingTime(maxLength, deviceCapabilities?.cuda_available ? device : 'cpu')}s 
+                                    for {maxLength} tokens ({deviceCapabilities?.cuda_available && device === 'cuda' ? '2' : '1'} tokens/sec)
+                                </div>
+                            )}
                         </div>
                     </div>
 

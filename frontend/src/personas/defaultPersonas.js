@@ -4,36 +4,42 @@ export const defaultPersonas = [
     id: "face",
     label: "Face Detector",
     description: "Detects faces in webcam images.",
-    systemPrompt: "You are a face detection agent. Return the number and location of faces in the image. Describe their appearances."
+    systemPrompt: "You are a helpful assistant.",
+    userPrompt: "Detect and count all faces in this image. Describe their appearances and locations."
   },
   {
     id: "fire",
     label: "Fire Detector",
     description: "Detects fire in webcam images.",
-    systemPrompt: "You are a fire detection agent. Analyze the image and return whether there is fire present, its size, and location."
+    systemPrompt: "You are a helpful assistant.",
+    userPrompt: "Analyze this image for any signs of fire, flames, or smoke. Describe the size, location, and severity if present."
   },
   {
     id: "dog_poop",
-    label: "Dog Poop Detector",
+    label: "Dog Poop Detector", 
     description: "Detects dog poop in webcam images.",
-    systemPrompt: "You are a dog poop detection agent. Analyze the image and return whether there is dog poop present, its size, and location."
+    systemPrompt: "You are a helpful assistant.",
+    userPrompt: "Look for any dog poop or animal waste in this image. Describe its location and appearance if found."
   },
   {
     id: "image_captioning",
     label: "Image Captioning",
     description: "Generates detailed captions for webcam images.",
-    systemPrompt: "You are an image captioning agent. Describe the content of the image in detail, including objects, actions, and context."
+    systemPrompt: "You are a helpful assistant.",
+    userPrompt: "Provide a detailed caption describing everything you see in this image, including objects, people, actions, and setting."
   },
   {
     id: "object_detection",
     label: "Object Detection",
     description: "Detects objects in webcam images.",
-    systemPrompt: "You are an object detection agent. Identify and describe all objects present in the image, including their locations."
+    systemPrompt: "You are a helpful assistant.",
+    userPrompt: "Identify and list all objects visible in this image, including their approximate locations and descriptions."
   },
   {
     id: "scene_analysis",
     label: "Scene Analysis",
     description: "Analyzes scenes in webcam images.",
-    systemPrompt: "You are a scene analysis agent. Provide a detailed description of the scene, including objects, actions, and context."
+    systemPrompt: "You are a helpful assistant.",
+    userPrompt: "Analyze this scene comprehensively, describing the setting, atmosphere, activities, and any notable details."
   }
 ];

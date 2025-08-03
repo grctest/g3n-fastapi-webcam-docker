@@ -21,9 +21,12 @@ from .lib.endpoints.gemma_endpoints import (
     handle_initialize_gemma_instance,
     handle_chat_with_gemma_instance,
     handle_image_analysis,
+    handle_analyze_image_from_pil,
     handle_get_instance_status,
     handle_shutdown_instance,
-    handle_shutdown_all_instances
+    handle_shutdown_all_instances,
+    handle_cancel_instance_processing,
+    handle_get_device_capabilities
 )
 
 # --- Logging Configuration ---
@@ -80,12 +83,9 @@ async def initialize_gemma_instance(
     model_name: ModelEnum = Query(ModelEnum.GEMMA_3N_E2B_IT, description="Gemma model to use"),
     device: DeviceEnum = Query(DeviceEnum.AUTO, description="Device to run the model on"),
     max_length: int = Query(512, ge=1, le=8192, description="Maximum generation length"),
-    temperature: float = Query(0.8, ge=0.0, le=2.0, description="Sampling temperature"),
     system_prompt: str = Query("You are a helpful AI assistant analyzing images.", description="System prompt for the model"),
     user_prompt_template: str = Query("What do you see in this image?", description="Default user prompt template"),
     load_in_4bit: bool = Query(True, description="Use 4-bit quantization for memory efficiency"),
-    top_p: float = Query(0.9, ge=0.0, le=1.0, description="Top-p sampling parameter"),
-    top_k: int = Query(50, ge=1, description="Top-k sampling parameter"),
     do_sample: bool = Query(True, description="Whether to use sampling")
 ):
     """
@@ -99,12 +99,9 @@ async def initialize_gemma_instance(
     - `model_name`: The Gemma model variant to use
     - `device`: Compute device (CPU, CUDA, or auto-detect)
     - `max_length`: Maximum tokens to generate
-    - `temperature`: Randomness in generation (0.0 = deterministic, 2.0 = very random)
     - `system_prompt`: Instructions for the model's behavior
     - `user_prompt_template`: Default user prompt for image analysis
     - `load_in_4bit`: Whether to use 4-bit quantization (saves memory)
-    - `top_p`: Top-p sampling parameter for nucleus sampling
-    - `top_k`: Top-k sampling parameter
     - `do_sample`: Whether to use sampling vs greedy decoding
 
     **Response**: Information about the created instance including status and memory usage.
@@ -114,12 +111,9 @@ async def initialize_gemma_instance(
         model_name=model_name,
         device=device,
         max_length=max_length,
-        temperature=temperature,
         system_prompt=system_prompt,
         user_prompt_template=user_prompt_template,
         load_in_4bit=load_in_4bit,
-        top_p=top_p,
-        top_k=top_k,
         do_sample=do_sample
     )
     
@@ -264,19 +258,30 @@ async def analyze_image_multipart_with_gemma(
         
         logger.info(f"Processing image upload: {file.filename} ({width}x{height}, {len(file_content)} bytes) for instance {instance_id}")
         
-        # Convert to base64 for compatibility with existing handler
-        image_base64 = base64.b64encode(file_content).decode('utf-8')
+        # Save file to temporary location and read as PIL Image (like Kaggle example)
+        import tempfile
+        import os
         
-        # Create ImageAnalysisRequest object with custom prompt
-        from .lib.models import ImageAnalysisRequestWithPrompt
-        request = ImageAnalysisRequestWithPrompt(
-            instance_id=instance_id,
-            image_data=image_base64,
-            user_prompt=user_prompt
-        )
+        # Create temporary file
+        with tempfile.NamedTemporaryFile(suffix='.jpg', delete=False) as temp_file:
+            temp_file.write(file_content)
+            temp_file_path = temp_file.name
         
-        # Use existing handler (we'll need to update this to support custom prompts)
-        return await handle_image_analysis(request)
+        try:
+            # Read image from file (like Kaggle example)
+            image = Image.open(temp_file_path)
+            logger.info(f"Loaded image from file: {image.size}, mode: {image.mode}")
+            
+            # Use the new file-based image analysis
+            result = await handle_analyze_image_from_pil(image, instance_id, user_prompt)
+            return result
+            
+        finally:
+            # Clean up temporary file
+            try:
+                os.unlink(temp_file_path)
+            except Exception as e:
+                logger.warning(f"Failed to delete temporary file {temp_file_path}: {e}")
         
     except HTTPException:
         raise
@@ -321,6 +326,23 @@ async def shutdown_gemma_instance(instance_id: str = FastAPIPath(..., descriptio
     return await handle_shutdown_instance(instance_id)
 
 @app.get(
+    "/api/device-capabilities",
+    summary="Get Device Capabilities",
+    tags=["System Information"],
+    operation_id="get_device_capabilities"
+)
+async def get_device_capabilities():
+    """
+    Get information about available compute devices.
+
+    This endpoint returns information about CUDA and CPU availability,
+    helping clients determine which device options to present to users.
+
+    **Returns**: Device capabilities including CUDA availability, device details.
+    """
+    return await handle_get_device_capabilities()
+
+@app.get(
     "/api/shutdown-all-instances",
     summary="Shutdown All Instances",
     tags=["Instance Management"],
@@ -336,6 +358,23 @@ async def shutdown_all_gemma_instances():
     **Response**: Results for each instance shutdown attempt.
     """
     return await handle_shutdown_all_instances()
+
+@app.post(
+    "/api/cancel-processing/{instance_id}",
+    summary="Cancel Instance Processing",
+    tags=["Instance Management"],
+    operation_id="cancel_gemma_instance_processing"
+)
+async def cancel_gemma_instance_processing(instance_id: str = FastAPIPath(..., description="Instance ID to cancel processing")):
+    """
+    Cancel ongoing processing for a specific Gemma instance.
+
+    **Parameters**:
+    - `instance_id`: The instance to cancel processing for
+
+    **Response**: Success message confirming cancellation request.
+    """
+    return await handle_cancel_instance_processing(instance_id)
 
 # --- Frontend Static Files Configuration ---
 # Mount the entire frontend directory as static files with html=True
