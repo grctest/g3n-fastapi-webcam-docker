@@ -24,7 +24,6 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
     const [userPrompt, setUserPrompt] = useState('');
     const [device, setDevice] = useState('auto');
     const [maxLength, setMaxLength] = useState(512);
-    const [loadIn4bit, setLoadIn4bit] = useState(true);
     const [doSample, setDoSample] = useState(false); // Default to greedy sampling
     const [enableTTS, setEnableTTS] = useState(false); // TTS toggle
     const personas = defaultPersonas;
@@ -78,7 +77,6 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
             setUserPrompt(initialPersona.userPrompt || 'What do you see in this image?');
             setDevice(initialPersona.device || 'auto');
             setMaxLength(initialPersona.maxLength || 512);
-            setLoadIn4bit(initialPersona.loadIn4bit !== undefined ? initialPersona.loadIn4bit : true);
             setDoSample(initialPersona.doSample !== undefined ? initialPersona.doSample : false);
             setEnableTTS(initialPersona.enableTTS !== undefined ? initialPersona.enableTTS : false);
             setInterval(initialPersona.interval || getDefaultInterval(initialPersona.device || 'auto'));
@@ -91,7 +89,6 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
             setUserPrompt('What do you see in this image?');
             setDevice('auto');
             setMaxLength(512);
-            setLoadIn4bit(true);
             setDoSample(false); // Default to greedy sampling
             setInterval(getDefaultInterval('auto'));
         }
@@ -99,8 +96,8 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
 
     // Helper function to calculate processing time based on max length and device
     const calculateProcessingTime = (maxTokens, deviceType) => {
-        // 1-2 tokens per second base rate
-        const tokensPerSecond = deviceType === 'cuda' ? 2 : 1; // GPU is faster
+        // 2 tokens per second base rate for both CPU and GPU
+        const tokensPerSecond = 2; // Updated to reflect actual CPU performance
         return Math.ceil(maxTokens / tokensPerSecond);
     };
 
@@ -163,7 +160,6 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
             setUserPrompt('What do you see in this image?');
             setDevice('auto');
             setMaxLength(512);
-            setLoadIn4bit(true);
             setDoSample(true);
         } else {
             setIsCustom(false);
@@ -175,7 +171,6 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
                 setUserPrompt(selected.userPrompt || 'What do you see in this image?');
                 setDevice(selected.device || 'auto');
                 setMaxLength(selected.maxLength || 512);
-                setLoadIn4bit(selected.loadIn4bit !== undefined ? selected.loadIn4bit : true);
                 setDoSample(selected.doSample !== undefined ? selected.doSample : true);
             }
         }
@@ -198,7 +193,6 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
                     userPrompt: xss(userPrompt),
                     device: device,
                     maxLength: maxLength,
-                    loadIn4bit: loadIn4bit,
                     doSample: doSample,
                     enableTTS: enableTTS,
                     interval: interval,
@@ -211,7 +205,6 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
                     ...selected,
                     device: device,
                     maxLength: maxLength,
-                    loadIn4bit: loadIn4bit,
                     doSample: doSample,
                     enableTTS: enableTTS,
                     interval: interval,
@@ -378,52 +371,29 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
                     <div className="border-t pt-4">
                         <h3 className="text-sm font-medium mb-3">{t('PersonaForm:technicalConfiguration')}</h3>
                         
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-2">
-                                <Label htmlFor="device">{t('PersonaForm:computeDevice')}</Label>
-                                <Select value={device} onValueChange={setDevice} disabled={loadingCapabilities}>
-                                    <SelectTrigger id="device">
-                                        <SelectValue placeholder={loadingCapabilities ? t('PersonaForm:loadingCapabilities') : t('PersonaForm:selectDevice')} />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {loadingCapabilities ? (
-                                            <SelectItem value="loading" disabled>{t('PersonaForm:loadingDeviceCapabilities')}</SelectItem>
-                                        ) : (
-                                            <>
-                                                <SelectItem value="auto">{t('PersonaForm:autoDetect')}</SelectItem>
-                                                {deviceCapabilities?.cuda_available && (
-                                                    <SelectItem value="cuda">{t('PersonaForm:gpuCuda')}</SelectItem>
-                                                )}
-                                                <SelectItem value="cpu">{t('PersonaForm:cpuOnly')}</SelectItem>
-                                            </>
-                                        )}
-                                    </SelectContent>
-                                </Select>
-                                <div className="text-xs text-muted-foreground">
-                                    {loadingCapabilities ? t('PersonaForm:loadingDeviceCapabilities') : 
-                                     deviceCapabilities?.cuda_available ? t('PersonaForm:deviceCapabilitiesHelp') : t('PersonaForm:deviceCapabilitiesNoGpu')}
-                                </div>
-                            </div>
-
-                            <div className="space-y-2">
-                                <Label htmlFor="loadIn4bit">{t('PersonaForm:quantization')}</Label>
-                                <Select value={loadIn4bit.toString()} onValueChange={val => setLoadIn4bit(val === 'true')}>
-                                    <SelectTrigger id="loadIn4bit">
-                                        <SelectValue placeholder={t('PersonaForm:selectQuantization')} />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="true">{t('PersonaForm:quantizationEnabled')}</SelectItem>
-                                        <SelectItem value="false">{t('PersonaForm:quantizationDisabled')}</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                                <div className="text-xs text-muted-foreground">
-                                    <div className="mb-1">
-                                        <span className="font-semibold">{t('PersonaForm:quantizationEnabled').split(' ')[0]}:</span> {t('PersonaForm:quantizationEnabledHelp')}
-                                    </div>
-                                    <div>
-                                        <span className="font-semibold">{t('PersonaForm:quantizationDisabled').split(' ')[0]}:</span> {t('PersonaForm:quantizationDisabledHelp')}
-                                    </div>
-                                </div>
+                        <div className="space-y-2">
+                            <Label htmlFor="device">{t('PersonaForm:computeDevice')}</Label>
+                            <Select value={device} onValueChange={setDevice} disabled={loadingCapabilities}>
+                                <SelectTrigger id="device">
+                                    <SelectValue placeholder={loadingCapabilities ? t('PersonaForm:loadingCapabilities') : t('PersonaForm:selectDevice')} />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {loadingCapabilities ? (
+                                        <SelectItem value="loading" disabled>{t('PersonaForm:loadingDeviceCapabilities')}</SelectItem>
+                                    ) : (
+                                        <>
+                                            <SelectItem value="auto">{t('PersonaForm:autoDetect')}</SelectItem>
+                                            {deviceCapabilities?.cuda_available && (
+                                                <SelectItem value="cuda">{t('PersonaForm:gpuCuda')}</SelectItem>
+                                            )}
+                                            <SelectItem value="cpu">{t('PersonaForm:cpuOnly')}</SelectItem>
+                                        </>
+                                    )}
+                                </SelectContent>
+                            </Select>
+                            <div className="text-xs text-muted-foreground">
+                                {loadingCapabilities ? t('PersonaForm:loadingDeviceCapabilities') : 
+                                 deviceCapabilities?.cuda_available ? t('PersonaForm:deviceCapabilitiesHelp') : t('PersonaForm:deviceCapabilitiesNoGpu')}
                             </div>
                         </div>
                     </div>
@@ -474,7 +444,7 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
                                     onCheckedChange={setEnableTTS}
                                 />
                                 <Label htmlFor="enableTTS" className="text-sm font-medium">
-                                    🔊 {t('PersonaForm:enableTTS')}
+                                    🔊 {t('PersonaForm:enableTTS')} - {enableTTS ? t('PersonaForm:enabled') : t('PersonaForm:disabled')}
                                 </Label>
                             </div>
                             <div className="text-xs text-muted-foreground">

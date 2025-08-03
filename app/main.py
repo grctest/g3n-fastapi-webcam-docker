@@ -85,7 +85,6 @@ async def initialize_gemma_instance(
     max_length: int = Query(512, ge=1, le=8192, description="Maximum generation length"),
     system_prompt: str = Query("You are a helpful AI assistant analyzing images.", description="System prompt for the model"),
     user_prompt_template: str = Query("What do you see in this image?", description="Default user prompt template"),
-    load_in_4bit: bool = Query(True, description="Use 4-bit quantization for memory efficiency"),
     do_sample: bool = Query(True, description="Whether to use sampling")
 ):
     """
@@ -101,7 +100,6 @@ async def initialize_gemma_instance(
     - `max_length`: Maximum tokens to generate
     - `system_prompt`: Instructions for the model's behavior
     - `user_prompt_template`: Default user prompt for image analysis
-    - `load_in_4bit`: Whether to use 4-bit quantization (saves memory)
     - `do_sample`: Whether to use sampling vs greedy decoding
 
     **Response**: Information about the created instance including status and memory usage.
@@ -113,13 +111,11 @@ async def initialize_gemma_instance(
         max_length=max_length,
         system_prompt=system_prompt,
         user_prompt_template=user_prompt_template,
-        load_in_4bit=load_in_4bit,
         do_sample=do_sample
     )
     
     request = InitializeGemmaRequest(
-        config=config,
-        load_in_4bit=load_in_4bit
+        config=config
     )
     
     return await handle_initialize_gemma_instance(request)

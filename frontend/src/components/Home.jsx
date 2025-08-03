@@ -7,7 +7,7 @@ import { useStore } from "@nanostores/react";
 import Webcam from "react-webcam";
 import { useTranslation } from "react-i18next";
 
-import { ExclamationTriangleIcon, PlusIcon, TrashIcon, Pencil2Icon, PauseIcon, PlayIcon, ReloadIcon } from "@radix-ui/react-icons";
+import { ExclamationTriangleIcon, PlusIcon, TrashIcon, Pencil2Icon, PauseIcon, PlayIcon, ReloadIcon, ClockIcon } from "@radix-ui/react-icons";
 import { FixedSizeList as List } from 'react-window';
 
 
@@ -32,6 +32,7 @@ export default function Home() {
     const activeDetections = useStore(detectionStore);
 
     const [agentProcessing, setAgentProcessing] = useState({}); // { [agentId]: boolean }
+    const [agentPendingPause, setAgentPendingPause] = useState({}); // { [agentId]: boolean } - agents that will pause after current processing
     const [agentCountdowns, setAgentCountdowns] = useState({}); // { [agentId]: number }
 
     const [agentErrors, setAgentErrors] = useState({}); // { [agentId]: errorMsg }
@@ -104,23 +105,6 @@ export default function Home() {
         initSpeech();
     }, []);
 
-    // Cleanup TTS on component unmount and when dialog content changes
-    useEffect(() => {
-        return () => {
-            stopSpeech();
-        };
-    }, [stopSpeech]);
-
-    // Stop TTS when detection dialog content changes
-    useEffect(() => {
-        if (currentSpeech === 'dialog' && detectionDialog.open) {
-            // If dialog content changes while speaking, stop current speech
-            stopSpeech();
-        }
-        // Reset copy status when dialog content changes
-        setIsCopied(false);
-    }, [detectionDialog.content, currentSpeech, stopSpeech]);
-
     // TTS Helper Functions
     const stopSpeech = useCallback(() => {
         if (isSpeaking) {
@@ -189,6 +173,23 @@ export default function Home() {
         }
     }, []);
 
+    // Cleanup TTS on component unmount and when dialog content changes
+    useEffect(() => {
+        return () => {
+            stopSpeech();
+        };
+    }, [stopSpeech]);
+
+    // Stop TTS when detection dialog content changes
+    useEffect(() => {
+        if (currentSpeech === 'dialog' && detectionDialog.open) {
+            // If dialog content changes while speaking, stop current speech
+            stopSpeech();
+        }
+        // Reset copy status when dialog content changes
+        setIsCopied(false);
+    }, [detectionDialog.content, currentSpeech, stopSpeech]);
+
                 // Check for webcam devices on mount
     // Webcam detection logic as a function for manual refresh
     const checkWebcam = async () => {
@@ -236,6 +237,7 @@ export default function Home() {
             Object.values(agentIntervals.current).forEach(clearInterval);
             agentIntervals.current = {};
             setAgentProcessing({});
+            setAgentPendingPause({});
             setAgentCountdowns({});
             setAgentErrors({});
             setAgentResults({});
@@ -386,6 +388,12 @@ export default function Home() {
             return newProcessing;
         });
         
+        setAgentPendingPause(prev => {
+            const newPendingPause = { ...prev };
+            delete newPendingPause[agent.id];
+            return newPendingPause;
+        });
+        
         setAgentCountdowns(prev => {
             const newCountdowns = { ...prev };
             delete newCountdowns[agent.id];
@@ -399,9 +407,15 @@ export default function Home() {
         console.log(`[DEBUG] Toggling pause for agent ${agent.id}. Current paused state: ${agent.paused}`);
         const isPausing = !agent.paused;
 
-        // If pausing and agent is currently processing, cancel the processing first
+        // If pausing and agent is currently processing, handle gracefully
         if (isPausing && agentProcessing[agent.id]) {
             try {
+                console.log(`[DEBUG] Agent ${agent.id} is currently processing. Setting pending pause state.`);
+                
+                // Set pending pause state immediately for UI feedback
+                setAgentPendingPause(prev => ({ ...prev, [agent.id]: true }));
+                
+                // Still call cancel to prevent future processing
                 console.log(`[DEBUG] Cancelling processing for agent ${agent.id} before pausing`);
                 const cancelResult = await cancelAgentProcessing(agent.id);
                 if (cancelResult.success) {
@@ -412,9 +426,9 @@ export default function Home() {
             } catch (error) {
                 console.error(`[DEBUG] Error cancelling processing for agent ${agent.id}:`, error);
             }
-            
-            // Reset processing state immediately
-            setAgentProcessing(prev => ({ ...prev, [agent.id]: false }));
+        } else {
+            // If not processing or resuming, clear pending pause state
+            setAgentPendingPause(prev => ({ ...prev, [agent.id]: false }));
         }
 
         const updatedAgents = agentStore.get().map(a => {
@@ -644,12 +658,15 @@ export default function Home() {
             
             setAgentProcessing(prev => ({ ...prev, [agent.id]: false }));
             
+            // Clear pending pause state when processing completes
+            setAgentPendingPause(prev => ({ ...prev, [agent.id]: false }));
+            
             // Reset countdown after processing completes
             setAgentCountdowns(prev => ({ ...prev, [agent.id]: agent.interval }));
             
             setTimeout(() => setHighlightedAgentId(null), 500);
         }
-    }, [t, agentProcessing, agentReadiness]); // Include agentReadiness in dependencies
+    }, [t, agentProcessing, agentReadiness, speakText]); // Include speakText in dependencies
 
 
     // Effect to manage agent intervals
@@ -934,7 +951,17 @@ export default function Home() {
                                                 <span className={`truncate flex-1 ${
                                                     isError ? 'text-red-700 font-medium' : 'text-gray-700'
                                                 }`}>
-                                                    {entry.text}
+                                                    <ReactMarkdown 
+                                                        components={{
+                                                            // Simple inline formatting only
+                                                            p: ({children}) => <span>{children}</span>,
+                                                            strong: ({children}) => <strong className="font-semibold">{children}</strong>,
+                                                            em: ({children}) => <em className="italic">{children}</em>,
+                                                            code: ({children}) => <code className="bg-gray-100 px-1 rounded text-xs">{children}</code>,
+                                                        }}
+                                                    >
+                                                        {entry.text}
+                                                    </ReactMarkdown>
                                                 </span>
                                                 <Button
                                                     variant="outline"
@@ -1011,6 +1038,7 @@ export default function Home() {
                             const cardBorder = status === 'error' ? 'border-2 border-red-500' : '';
                             
                             const isProcessing = agentProcessing[agent.id];
+                            const isPendingPause = agentPendingPause[agent.id];
                             const countdown = agentCountdowns[agent.id];
                             const showCountdown = !agent.paused && countdown !== undefined && countdown > 0 && isReady;
 
@@ -1026,12 +1054,17 @@ export default function Home() {
                                                         Loading
                                                     </span>
                                                 )}
-                                                {isProcessing && (
+                                                {isPendingPause && isProcessing && (
+                                                    <span className="text-xs bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded-md font-medium animate-pulse">
+                                                        {t('Home:pausingAfterProcessing')}
+                                                    </span>
+                                                )}
+                                                {isProcessing && !isPendingPause && (
                                                     <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded-md font-medium animate-pulse">
                                                         Processing {agentTimers[agent.id]?.currentTime ? `${agentTimers[agent.id].currentTime}s` : ''}
                                                     </span>
                                                 )}
-                                                {showCountdown && (
+                                                {showCountdown && !isPendingPause && (
                                                     <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded-md font-medium">
                                                         {countdown}s
                                                     </span>
@@ -1072,11 +1105,24 @@ export default function Home() {
                                                 size="sm"
                                                 variant="outline"
                                                 onClick={() => toggleAgentPause(agent)}
-                                                title={agent.paused ? t("resume") : t("pause")}
+                                                title={
+                                                    isPendingPause 
+                                                        ? t("Home:pausePendingTooltip")
+                                                        : agent.paused 
+                                                            ? t("resume") 
+                                                            : isProcessing 
+                                                                ? t("Home:pauseProcessingTooltip")
+                                                                : t("pause")
+                                                }
                                                 disabled={!webcamAvailable}
-                                                className="h-7 px-2 text-xs"
+                                                className={`h-7 px-2 text-xs ${isPendingPause ? 'bg-yellow-50 border-yellow-300 text-yellow-700' : ''}`}
                                             >
-                                                {agent.paused ? (
+                                                {isPendingPause ? (
+                                                    <>
+                                                        <ClockIcon className="w-3 h-3 mr-1" />
+                                                        {t('Home:pausePending')}
+                                                    </>
+                                                ) : agent.paused ? (
                                                     <>
                                                         <PlayIcon className="w-3 h-3 mr-1" />
                                                         Resume
@@ -1104,12 +1150,12 @@ export default function Home() {
                                                     <span className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 text-gray-700 rounded-md text-xs font-medium">
                                                         🖥️ {agentDeviceTypes[agent.id] === 'cuda' ? t('Home:gpu') : t('Home:cpu')}
                                                     </span>
-                                                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-700 rounded-md text-xs font-medium">
-                                                        💾 {agentMemoryUsage[agent.id] || imageProcessingStats[agent.id]?.memory_usage_mb 
-                                                            ? `${Math.round(agentMemoryUsage[agent.id] || imageProcessingStats[agent.id].memory_usage_mb)}${t('Home:memoryUnit')}`
-                                                            : t('Home:loading')
-                                                        }
-                                                    </span>
+                                                    {/* Only show RAM badge when agent is running and has real memory usage data */}
+                                                    {(agentMemoryUsage[agent.id] || imageProcessingStats[agent.id]?.memory_usage_mb) && (
+                                                        <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-700 rounded-md text-xs font-medium">
+                                                            💾 {Math.round(agentMemoryUsage[agent.id] || imageProcessingStats[agent.id].memory_usage_mb)}{t('Home:memoryUnit')}
+                                                        </span>
+                                                    )}
                                                 </div>
                                             )}
                                         </div>
@@ -1258,7 +1304,7 @@ export default function Home() {
             </Dialog>
             
             {/* Audio Settings Footer */}
-            <div className="w-full bg-gray-50 border-t border-gray-200 px-4 py-2 flex items-center justify-center">
+            <div className="w-full flex items-center justify-center py-2">
                 <Dialog open={audioSettingsOpen} onOpenChange={setAudioSettingsOpen}>
                     <DialogTrigger asChild>
                         <Button 
@@ -1269,7 +1315,7 @@ export default function Home() {
                             🔊 {t('Home:audioSettings')}
                         </Button>
                     </DialogTrigger>
-                    <DialogContent className="max-w-md">
+                    <DialogContent className="max-w-md bg-white border border-black">
                         <DialogHeader>
                             <DialogTitle>{t('Home:voiceSettings')}</DialogTitle>
                         </DialogHeader>
