@@ -8,7 +8,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { useToast } from "@/hooks/use-toast";
 import { agentStore } from "@/stores/agentStore";
 import { defaultPersonas } from "@/personas/defaultPersonas";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -34,7 +33,6 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
     const [interval, setInterval] = useState(initialPersona?.interval || 10);
     const [deviceCapabilities, setDeviceCapabilities] = useState(null);
     const [loadingCapabilities, setLoadingCapabilities] = useState(true);
-    const { toast } = useToast();
 
     // Fetch device capabilities on mount
     useEffect(() => {
@@ -186,11 +184,7 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
 
     const handleSave = async () => {
         if (!validate()) {
-            toast({
-                title: t('PersonaForm:validationErrorTitle'),
-                description: t('PersonaForm:validationErrorDescription'),
-                variant: "destructive",
-            });
+            console.error('Validation failed:', errors);
             return;
         }
         setIsSaving(true);
@@ -245,11 +239,7 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
                 console.log('Initializing agent with new configuration via FastAPI...');
                 const result = await initializeAgent(agentData);
                 if (!result.success) {
-                    toast({
-                        title: t('PersonaForm:backendErrorTitle') || 'FastAPI Error',
-                        description: result.error || t('PersonaForm:backendErrorDescription') || 'Could not initialize agent via FastAPI.',
-                        variant: "destructive",
-                    });
+                    console.error('Failed to initialize agent:', result.error);
                     setIsSaving(false);
                     return;
                 }
@@ -264,7 +254,6 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
                 );
                 agentStore.set(updatedAgents);
                 console.log('Agent updated:', updatedAgents.find(a => a.id === agentId));
-                toast({ title: t('PersonaForm:agentUpdated') || 'Agent updated successfully!' });
             } else {
                 // Debug log
                 console.log('Saving agent:', agentData);
@@ -273,11 +262,7 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
                 console.log('Initializing agent via FastAPI...');
                 const result = await initializeAgent(agentData);
                 if (!result.success) {
-                    toast({
-                        title: t('PersonaForm:backendErrorTitle') || 'FastAPI Error',
-                        description: result.error || t('PersonaForm:backendErrorDescription') || 'Could not initialize agent via FastAPI.',
-                        variant: "destructive",
-                    });
+                    console.error('Failed to initialize agent:', result.error);
                     setIsSaving(false);
                     return; // Stop if FastAPI initialization fails
                 }
@@ -287,7 +272,6 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
                 const agents = agentStore.get();
                 agentStore.set([...agents, agentData]);
                 console.log('Agent added:', agentData);
-                toast({ title: t('PersonaForm:agentAdded') || 'Agent added successfully!' });
             }
             
             if (onSave) onSave(agentData); // Close dialog after save

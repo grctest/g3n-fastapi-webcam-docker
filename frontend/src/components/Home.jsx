@@ -15,8 +15,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { useToast } from "@/hooks/use-toast";
-import { Toaster } from "@/components/ui/toaster";
 
 import { i18n as i18nInstance, locale } from "@/lib/i18n.js";
 import { agentStore } from "../stores/agentStore";
@@ -27,7 +25,6 @@ import { initializeAgent, getAgentStatus, processImage, shutdownAgent, cancelAge
 import { compressImage, getImageMetadata } from '../lib/imageUtils.js';
 
 export default function Home() {
-    const { toast } = useToast();
     const { t, i18n } = useTranslation(locale.get(), { i18n: i18nInstance });
     const agents = useStore(agentStore);
     const activeDetections = useStore(detectionStore);
@@ -277,25 +274,11 @@ export default function Home() {
             
             if (result.success) {
                 console.log(`[DEBUG] Agent ${agent.id} shutdown successful:`, result.data);
-                toast({ 
-                    title: t("Agent removed successfully"), 
-                    description: `Agent "${agent.label}" has been shut down and removed.`
-                });
             } else {
                 console.warn(`[DEBUG] Agent ${agent.id} shutdown failed, but continuing with removal:`, result.error);
-                toast({ 
-                    title: t("Agent removed with warning"), 
-                    description: `Agent "${agent.label}" removed locally, but shutdown may have failed: ${result.error}`,
-                    variant: "destructive"
-                });
             }
         } catch (error) {
             console.error(`[DEBUG] Error during agent ${agent.id} shutdown:`, error);
-            toast({ 
-                title: t("Agent removed with error"), 
-                description: `Agent "${agent.label}" removed locally, but shutdown failed: ${error.message}`,
-                variant: "destructive"
-            });
         } finally {
             // Clear loading state
             setAgentRemoving(prev => {
@@ -365,10 +348,6 @@ export default function Home() {
                 const cancelResult = await cancelAgentProcessing(agent.id);
                 if (cancelResult.success) {
                     console.log(`[DEBUG] Processing cancellation requested for agent ${agent.id}`);
-                    toast({
-                        title: "Processing cancelled",
-                        description: `Processing for agent "${agent.label}" has been cancelled and the agent is now paused.`,
-                    });
                 } else {
                     console.warn(`[DEBUG] Failed to cancel processing for agent ${agent.id}:`, cancelResult.error);
                 }
@@ -1205,8 +1184,6 @@ export default function Home() {
                     </div>
                 </DialogContent>
             </Dialog>
-            
-            <Toaster />
         </div>
     );
 }
