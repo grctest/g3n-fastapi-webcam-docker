@@ -67,6 +67,8 @@ export default function Home() {
     
     // Audio settings state
     const [audioSettingsOpen, setAudioSettingsOpen] = useState(false);
+    const [viewAgentDialogOpen, setViewAgentDialogOpen] = useState(false);
+    const [viewAgentData, setViewAgentData] = useState(null);
     const [availableVoices, setAvailableVoices] = useState([]);
     const [audioSettings, setAudioSettings] = useState({
         voice: null, // Will be set to first available voice
@@ -450,6 +452,29 @@ export default function Home() {
         console.log(`[DEBUG] Agent ${agent.id} (${agent.label}) is now ${isPausing ? 'paused' : 'active'} in UI.`);
     };
 
+    // Manual capture handler for agents with captureMode === 'manual'
+    const handleManualCapture = async (agent) => {
+        console.log(`[DEBUG] Manual capture triggered for agent ${agent.id} (${agent.label})`);
+        
+        // Check if agent is already processing
+        if (agentProcessing[agent.id]) {
+            console.log(`[DEBUG] Agent ${agent.id} is already processing, ignoring manual capture request`);
+            return;
+        }
+
+        // Use the existing runAgent function with manual capture flag
+        await runAgent(agent, true);
+    };
+
+    // Handler to view agent details in read-only mode
+    const handleViewAgent = (agentId) => {
+        const agent = agents.find(a => a.id === agentId);
+        if (agent) {
+            setViewAgentData(agent);
+            setViewAgentDialogOpen(true);
+        }
+    };
+
     // Async handler for sending image to a single agent and return result for batching
     const handleSendImageToAgent = async (agent) => {
         console.log(`[DEBUG] handleSendImageToAgent: Starting for agent ${agent.id} (${agent.label})`);
@@ -522,8 +547,9 @@ export default function Home() {
         }
     };
 
-    const runAgent = useCallback(async (agent) => {
-        if (agent.paused) {
+    const runAgent = useCallback(async (agent, isManualCapture = false) => {
+        // For interval mode agents, check if paused. Manual capture agents can always run
+        if (agent.paused && !isManualCapture) {
             console.log(`[DEBUG] runAgent: Agent ${agent.id} is paused. Skipping execution.`);
             return;
         }
@@ -661,8 +687,10 @@ export default function Home() {
             // Clear pending pause state when processing completes
             setAgentPendingPause(prev => ({ ...prev, [agent.id]: false }));
             
-            // Reset countdown after processing completes
-            setAgentCountdowns(prev => ({ ...prev, [agent.id]: agent.interval }));
+            // Reset countdown after processing completes (only for interval mode)
+            if (agent.captureMode !== 'manual') {
+                setAgentCountdowns(prev => ({ ...prev, [agent.id]: agent.interval }));
+            }
             
             setTimeout(() => setHighlightedAgentId(null), 500);
         }
@@ -695,8 +723,9 @@ export default function Home() {
         // Start intervals for active agents that are ready
         activeAgents.forEach(agent => {
             const isReady = agentReadiness[agent.id] || false;
+            const isIntervalMode = agent.captureMode !== 'manual';
             
-            if (!agentIntervals.current[agent.id] && agent.interval > 0 && isReady) {
+            if (!agentIntervals.current[agent.id] && agent.interval > 0 && isReady && isIntervalMode) {
                 console.log(`[DEBUG] Setting up interval for agent ${agent.id} every ${agent.interval} seconds.`);
                 
                 // Initialize countdown for this agent
@@ -717,8 +746,10 @@ export default function Home() {
                 // Run once immediately on resume only if ready
                 console.log(`[DEBUG] Running agent ${agent.id} immediately after unpausing.`);
                 runAgent(agent);
-            } else if (!isReady && agent.interval > 0) {
+            } else if (!isReady && agent.interval > 0 && isIntervalMode) {
                 console.log(`[DEBUG] Agent ${agent.id} is not ready yet (ready: ${isReady}), skipping interval setup.`);
+            } else if (!isIntervalMode) {
+                console.log(`[DEBUG] Agent ${agent.id} is in manual capture mode, skipping interval setup.`);
             }
         });
 
@@ -751,11 +782,15 @@ export default function Home() {
         const countdownInterval = setInterval(() => {
             setAgentCountdowns(prev => {
                 const newCountdowns = { ...prev };
+                const currentAgents = agentStore.get();
                 let hasChanges = false;
                 
-                // Decrement countdown for each active agent (only if not processing)
+                // Decrement countdown for each active agent (only if not processing and in interval mode)
                 Object.keys(newCountdowns).forEach(agentId => {
-                    if (newCountdowns[agentId] > 0 && !agentProcessing[agentId]) {
+                    const agent = currentAgents.find(a => a.id === agentId);
+                    const isIntervalMode = agent && agent.captureMode !== 'manual';
+                    
+                    if (newCountdowns[agentId] > 0 && !agentProcessing[agentId] && isIntervalMode) {
                         newCountdowns[agentId] -= 1;
                         hasChanges = true;
                     }
@@ -935,6 +970,7 @@ export default function Home() {
                                                     open: true, 
                                                     content: entry.text, 
                                                     agentName: entry.agentName || `${t("Home:agent")} ${entry.agentId}`,
+                                                    agentId: entry.agentId,
                                                     imageData: entry.imageData || null,
                                                     timestamp: entry.lastUpdate,
                                                     processingTime: entry.processingTime,
@@ -1101,40 +1137,65 @@ export default function Home() {
                                     <CardContent className="p-3 pt-0 space-y-2">
                                         <p className="text-xs text-gray-600 leading-relaxed">{agent.description}</p>
                                         <div className="flex items-center gap-2">
-                                            <Button
-                                                size="sm"
-                                                variant="outline"
-                                                onClick={() => toggleAgentPause(agent)}
-                                                title={
-                                                    isPendingPause 
-                                                        ? t("Home:pausePendingTooltip")
-                                                        : agent.paused 
-                                                            ? t("resume") 
-                                                            : isProcessing 
-                                                                ? t("Home:pauseProcessingTooltip")
-                                                                : t("pause")
-                                                }
-                                                disabled={!webcamAvailable}
-                                                className={`h-7 px-2 text-xs ${isPendingPause ? 'bg-yellow-50 border-yellow-300 text-yellow-700' : ''}`}
-                                            >
-                                                {isPendingPause ? (
-                                                    <>
-                                                        <ClockIcon className="w-3 h-3 mr-1" />
-                                                        {t('Home:pausePending')}
-                                                    </>
-                                                ) : agent.paused ? (
-                                                    <>
-                                                        <PlayIcon className="w-3 h-3 mr-1" />
-                                                        Resume
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <PauseIcon className="w-3 h-3 mr-1" />
-                                                        Pause
-                                                    </>
-                                                )}
-                                            </Button>
-                                            {!agent.paused && !isProcessing && (
+                                            {agent.captureMode === 'manual' ? (
+                                                // Manual capture mode - show capture button
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    onClick={() => handleManualCapture(agent)}
+                                                    disabled={!webcamAvailable || isProcessing}
+                                                    className="h-7 px-2 text-xs"
+                                                >
+                                                    {isProcessing ? (
+                                                        <>
+                                                            <ReloadIcon className="w-3 h-3 mr-1 animate-spin" />
+                                                            {t('Home:capturing')}
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <PlayIcon className="w-3 h-3 mr-1" />
+                                                            {t('Home:captureFrame')}
+                                                        </>
+                                                    )}
+                                                </Button>
+                                            ) : (
+                                                // Interval mode - show pause/resume button
+                                                <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    onClick={() => toggleAgentPause(agent)}
+                                                    title={
+                                                        isPendingPause 
+                                                            ? t("Home:pausePendingTooltip")
+                                                            : agent.paused 
+                                                                ? t("resume") 
+                                                                : isProcessing 
+                                                                    ? t("Home:pauseProcessingTooltip")
+                                                                    : t("pause")
+                                                    }
+                                                    disabled={!webcamAvailable}
+                                                    className={`h-7 px-2 text-xs ${isPendingPause ? 'bg-yellow-50 border-yellow-300 text-yellow-700' : ''}`}
+                                                >
+                                                    {isPendingPause ? (
+                                                        <>
+                                                            <ClockIcon className="w-3 h-3 mr-1" />
+                                                            {t('Home:pausePending')}
+                                                        </>
+                                                    ) : agent.paused ? (
+                                                        <>
+                                                            <PlayIcon className="w-3 h-3 mr-1" />
+                                                            Resume
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <PauseIcon className="w-3 h-3 mr-1" />
+                                                            Pause
+                                                        </>
+                                                    )}
+                                                </Button>
+                                            )}
+                                            {/* Show interval info only for interval mode and when not paused/processing */}
+                                            {agent.captureMode !== 'manual' && !agent.paused && !isProcessing && (
                                                 <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
                                                     Every {agent.interval}s
                                                 </span>
@@ -1272,6 +1333,26 @@ export default function Home() {
                                     📊 Processing Details
                                 </h4>
                                 <div className="grid grid-cols-1 gap-2 text-xs">
+                                    {detectionDialog.agentName && (
+                                        <div className="flex justify-between items-center">
+                                            <span className="font-medium text-blue-700">🤖 Agent:</span>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-blue-600">
+                                                    {detectionDialog.agentName}
+                                                </span>
+                                                {detectionDialog.agentId && (
+                                                    <Button
+                                                        size="sm"
+                                                        variant="outline"
+                                                        className="h-6 px-2 text-xs text-blue-600 border-blue-300 hover:bg-blue-50"
+                                                        onClick={() => handleViewAgent(detectionDialog.agentId)}
+                                                    >
+                                                        View Agent
+                                                    </Button>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
                                     {detectionDialog.timestamp && (
                                         <div className="flex justify-between">
                                             <span className="font-medium text-blue-700">📅 Captured:</span>
@@ -1406,6 +1487,16 @@ export default function Home() {
                     </DialogContent>
                 </Dialog>
             </div>
+            
+            {/* View Agent Dialog */}
+            {viewAgentData && (
+                <PersonaForm
+                    open={viewAgentDialogOpen}
+                    onOpenChange={setViewAgentDialogOpen}
+                    persona={viewAgentData}
+                    viewOnly={true}
+                />
+            )}
         </div>
     );
 }

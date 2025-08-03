@@ -138,7 +138,7 @@ Once running, visit `http://localhost:8080/docs` for the interactive API documen
   "instance_id": "unique-id",
   "model_name": "google/gemma-3n-E2B-it",
   "device": "auto",  # "cpu", "cuda", or "auto"
-  "max_length": 512,
+  "max_length": 100,
   "temperature": 0.8,
   "system_prompt": "Your custom prompt here",
   "load_in_4bit": true

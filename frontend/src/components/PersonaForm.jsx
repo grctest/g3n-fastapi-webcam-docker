@@ -13,7 +13,7 @@ import { defaultPersonas } from "@/personas/defaultPersonas";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { initializeAgent, getDeviceCapabilities } from "@/lib/api.js";
 
-export function PersonaForm({ open, onOpenChange, persona: initialPersona, editMode = false, agentId, onSave }) {
+export function PersonaForm({ open, onOpenChange, persona: initialPersona, editMode = false, agentId, onSave, viewOnly = false }) {
     const { t } = useTranslation(locale.get(), { i18n: i18nInstance });
     // Always allow 'custom' option, and default to it if no initialPersona
     const [isCustom, setIsCustom] = useState(true);
@@ -23,13 +23,14 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
     const [systemPrompt, setSystemPrompt] = useState('');
     const [userPrompt, setUserPrompt] = useState('');
     const [device, setDevice] = useState('auto');
-    const [maxLength, setMaxLength] = useState(512);
+    const [maxLength, setMaxLength] = useState(100);
     const [doSample, setDoSample] = useState(false); // Default to greedy sampling
     const [enableTTS, setEnableTTS] = useState(false); // TTS toggle
     const personas = defaultPersonas;
     const [errors, setErrors] = useState({});
     const [isSaving, setIsSaving] = useState(false);
     const [interval, setInterval] = useState(initialPersona?.interval || 10);
+    const [captureMode, setCaptureMode] = useState(initialPersona?.captureMode || 'interval');
     const [deviceCapabilities, setDeviceCapabilities] = useState(null);
     const [loadingCapabilities, setLoadingCapabilities] = useState(true);
 
@@ -76,10 +77,11 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
             setSystemPrompt(initialPersona.systemPrompt || 'You are a helpful assistant.');
             setUserPrompt(initialPersona.userPrompt || 'What do you see in this image?');
             setDevice(initialPersona.device || 'auto');
-            setMaxLength(initialPersona.maxLength || 512);
+            setMaxLength(initialPersona.maxLength || 100);
             setDoSample(initialPersona.doSample !== undefined ? initialPersona.doSample : false);
             setEnableTTS(initialPersona.enableTTS !== undefined ? initialPersona.enableTTS : false);
             setInterval(initialPersona.interval || getDefaultInterval(initialPersona.device || 'auto'));
+            setCaptureMode(initialPersona.captureMode || 'interval');
         } else {
             setIsCustom(true);
             setSelectedPersonaId('custom');
@@ -88,9 +90,10 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
             setSystemPrompt('You are a helpful assistant.');
             setUserPrompt('What do you see in this image?');
             setDevice('auto');
-            setMaxLength(512);
+            setMaxLength(100);
             setDoSample(false); // Default to greedy sampling
             setInterval(getDefaultInterval('auto'));
+            setCaptureMode('interval');
         }
     }, [initialPersona, agentId, personas]);
 
@@ -159,8 +162,9 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
             setSystemPrompt('You are a helpful assistant.');
             setUserPrompt('What do you see in this image?');
             setDevice('auto');
-            setMaxLength(512);
+            setMaxLength(100);
             setDoSample(true);
+            setCaptureMode('interval');
         } else {
             setIsCustom(false);
             const selected = personas.find(p => p.id === value);
@@ -170,8 +174,9 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
                 setSystemPrompt(selected.systemPrompt || 'You are a helpful assistant.');
                 setUserPrompt(selected.userPrompt || 'What do you see in this image?');
                 setDevice(selected.device || 'auto');
-                setMaxLength(selected.maxLength || 512);
+                setMaxLength(selected.maxLength || 100);
                 setDoSample(selected.doSample !== undefined ? selected.doSample : true);
+                setCaptureMode(selected.captureMode || 'interval');
             }
         }
     };
@@ -196,6 +201,7 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
                     doSample: doSample,
                     enableTTS: enableTTS,
                     interval: interval,
+                    captureMode: captureMode,
                     paused: true,
                     id: initialPersona?.id || `agent-${Date.now()}`
                 };
@@ -208,6 +214,7 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
                     doSample: doSample,
                     enableTTS: enableTTS,
                     interval: interval,
+                    captureMode: captureMode,
                     paused: true,
                     id: initialPersona?.id || `agent-${Date.now()}`
                 };
@@ -278,14 +285,29 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="bg-white border border-black max-w-4xl w-[90vw] max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
-                    <DialogTitle>{initialPersona ? t('PersonaForm:editTitle') : t('PersonaForm:createTitle')}</DialogTitle>
+                    <DialogTitle>
+                        {viewOnly 
+                            ? t('PersonaForm:viewTitle') 
+                            : initialPersona 
+                                ? t('PersonaForm:editTitle') 
+                                : t('PersonaForm:createTitle')
+                        }
+                    </DialogTitle>
                     <DialogDescription>{t('PersonaForm:description')}</DialogDescription>
                 </DialogHeader>
+                {viewOnly && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+                        <div className="flex items-center gap-2 text-blue-800 text-sm">
+                            <span>ℹ️</span>
+                            <span>This persona is displayed in read-only mode. You cannot make changes.</span>
+                        </div>
+                    </div>
+                )}
                 <div className="space-y-6">
                     {!editMode && personas && (
                         <div className="space-y-2">
                             <Label htmlFor="persona-select">{t('PersonaForm:choosePersona')}</Label>
-                            <Select onValueChange={handleSelectChange} value={isCustom ? 'custom' : selectedPersonaId}>
+                            <Select onValueChange={handleSelectChange} value={isCustom ? 'custom' : selectedPersonaId} disabled={viewOnly}>
                                 <SelectTrigger id="persona-select">
                                     <SelectValue placeholder={t('PersonaForm:selectPlaceholder')} />
                                 </SelectTrigger>
@@ -308,6 +330,7 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
                             onChange={handleLabelChange}
                             placeholder={t('PersonaForm:labelPlaceholder')}
                             maxLength={40}
+                            disabled={viewOnly}
                             className={errors.label ? 'border-red-500' : ''}
                         />
                         <div className="text-xs text-muted-foreground flex justify-between">
@@ -325,6 +348,7 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
                             onChange={handleDescriptionChange}
                             placeholder={t('PersonaForm:descriptionPlaceholder')}
                             maxLength={80}
+                            disabled={viewOnly}
                             className={errors.description ? 'border-red-500' : ''}
                         />
                         <div className="text-xs text-muted-foreground flex justify-between">
@@ -342,6 +366,7 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
                             onChange={handleSystemPromptChange}
                             placeholder={t('PersonaForm:systemPromptPlaceholder')}
                             maxLength={1000}
+                            disabled={viewOnly}
                             className={`min-h-[120px] ${errors.systemPrompt ? 'border-red-500' : ''}`}
                         />
                         <div className="text-xs text-muted-foreground flex justify-between">
@@ -359,6 +384,7 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
                             onChange={handleUserPromptChange}
                             placeholder={t('PersonaForm:userPromptPlaceholder')}
                             maxLength={500}
+                            disabled={viewOnly}
                             className={`min-h-[80px] ${errors.userPrompt ? 'border-red-500' : ''}`}
                         />
                         <div className="text-xs text-muted-foreground flex justify-between">
@@ -373,7 +399,7 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
                         
                         <div className="space-y-2">
                             <Label htmlFor="device">{t('PersonaForm:computeDevice')}</Label>
-                            <Select value={device} onValueChange={setDevice} disabled={loadingCapabilities}>
+                            <Select value={device} onValueChange={setDevice} disabled={loadingCapabilities || viewOnly}>
                                 <SelectTrigger id="device">
                                     <SelectValue placeholder={loadingCapabilities ? t('PersonaForm:loadingCapabilities') : t('PersonaForm:selectDevice')} />
                                 </SelectTrigger>
@@ -409,9 +435,10 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
                                     type="number"
                                     id="maxLength"
                                     value={maxLength}
-                                    onChange={(e) => setMaxLength(parseInt(e.target.value) || 512)}
+                                    onChange={(e) => setMaxLength(parseInt(e.target.value) || 100)}
                                     min="1"
                                     max="8192"
+                                    disabled={viewOnly}
                                     className={errors.maxLength ? 'border-red-500' : ''}
                                 />
                                 <div className="text-xs text-muted-foreground">
@@ -422,7 +449,7 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
 
                         <div className="space-y-2 mt-4">
                             <Label htmlFor="doSample">{t('PersonaForm:samplingMode')}</Label>
-                            <Select value={doSample.toString()} onValueChange={val => setDoSample(val === 'true')}>
+                            <Select value={doSample.toString()} onValueChange={val => setDoSample(val === 'true')} disabled={viewOnly}>
                                 <SelectTrigger id="doSample">
                                     <SelectValue placeholder={t('PersonaForm:selectSamplingMode')} />
                                 </SelectTrigger>
@@ -442,6 +469,7 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
                                     id="enableTTS"
                                     checked={enableTTS}
                                     onCheckedChange={setEnableTTS}
+                                    disabled={viewOnly}
                                 />
                                 <Label htmlFor="enableTTS" className="text-sm font-medium">
                                     🔊 {t('PersonaForm:enableTTS')} - {enableTTS ? t('PersonaForm:enabled') : t('PersonaForm:disabled')}
@@ -454,8 +482,35 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
                     </div>
 
                     <div className="space-y-2">
+                        <Label htmlFor="captureMode">{t('PersonaForm:captureMode')}</Label>
+                        <Select value={captureMode} onValueChange={setCaptureMode} disabled={viewOnly}>
+                            <SelectTrigger id="captureMode">
+                                <SelectValue placeholder="Select capture mode" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="interval">
+                                    <div className="flex items-center gap-2">
+                                        <span>{t('PersonaForm:captureModeInterval')}</span>
+                                        <span className="text-xs text-muted-foreground">- {t('PersonaForm:captureModeIntervalDesc')}</span>
+                                    </div>
+                                </SelectItem>
+                                <SelectItem value="manual">
+                                    <div className="flex items-center gap-2">
+                                        <span>{t('PersonaForm:captureModeManual')}</span>
+                                        <span className="text-xs text-muted-foreground">- {t('PersonaForm:captureModeManualDesc')}</span>
+                                    </div>
+                                </SelectItem>
+                            </SelectContent>
+                        </Select>
+                        <div className="text-xs text-muted-foreground">
+                            {t('PersonaForm:captureModeHelp')}
+                        </div>
+                    </div>
+
+                    {captureMode === 'interval' && (
+                    <div className="space-y-2">
                         <Label htmlFor="interval">{t('PersonaForm:interval')}</Label>
-                        <Select value={interval} onValueChange={val => setInterval(Number(val))} disabled={loadingCapabilities || !deviceCapabilities}>
+                        <Select value={interval} onValueChange={val => setInterval(Number(val))} disabled={loadingCapabilities || !deviceCapabilities || viewOnly}>
                             <SelectTrigger id="interval">
                                 <SelectValue placeholder={loadingCapabilities ? t('PersonaForm:loadingCapabilities') : t('PersonaForm:intervalPlaceholder')} />
                             </SelectTrigger>
@@ -478,31 +533,40 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
                                     {t('PersonaForm:processingTimeHelp', {
                                         time: calculateProcessingTime(maxLength, deviceCapabilities?.cuda_available ? device : 'cpu'),
                                         tokens: maxLength,
-                                        rate: deviceCapabilities?.cuda_available && device === 'cuda' ? '2' : '1'
+                                        rate: deviceCapabilities?.cuda_available && device === 'cuda' ? '5' : '2'
                                     })}
                                 </div>
                             )}
                         </div>
                     </div>
+                    )}
 
                 </div>
                 <DialogFooter className="flex justify-end gap-2 p-4">
-                    <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-                        {t('cancel')}
-                    </Button>
-                    <Button type="button" disabled={isSaving} onClick={handleSave}>
-                        {isSaving ? (
-                            <span className="flex items-center">
-                                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                </svg>
-                                {t('saving')}
-                            </span>
-                        ) : (
-                            t('save')
-                        )}
-                    </Button>
+                    {viewOnly ? (
+                        <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                            {t('close')}
+                        </Button>
+                    ) : (
+                        <>
+                            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                                {t('cancel')}
+                            </Button>
+                            <Button type="button" disabled={isSaving} onClick={handleSave}>
+                                {isSaving ? (
+                                    <span className="flex items-center">
+                                        <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                        {t('saving')}
+                                    </span>
+                                ) : (
+                                    t('save')
+                                )}
+                            </Button>
+                        </>
+                    )}
                 </DialogFooter>
             </DialogContent>
         </Dialog>

@@ -82,7 +82,7 @@ async def initialize_gemma_instance(
     instance_id: str = Query(..., description="Unique identifier for this instance"),
     model_name: ModelEnum = Query(ModelEnum.GEMMA_3N_E2B_IT, description="Gemma model to use"),
     device: DeviceEnum = Query(DeviceEnum.AUTO, description="Device to run the model on"),
-    max_length: int = Query(512, ge=1, le=8192, description="Maximum generation length"),
+    max_length: int = Query(100, ge=1, le=8192, description="Maximum generation length"),
     system_prompt: str = Query("You are a helpful AI assistant analyzing images.", description="System prompt for the model"),
     user_prompt_template: str = Query("What do you see in this image?", description="Default user prompt template"),
     do_sample: bool = Query(True, description="Whether to use sampling")

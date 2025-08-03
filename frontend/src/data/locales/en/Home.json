@@ -36,6 +36,8 @@
     "lastResult": "Last result",
     "resume": "Resume",
     "pause": "Pause",
+    "captureFrame": "Capture Frame",
+    "capturing": "Capturing...",
     "pausePending": "Pausing...",
     "pausePendingTooltip": "Will pause after current processing completes",
     "pauseProcessingTooltip": "Will pause after current image finishes processing",
