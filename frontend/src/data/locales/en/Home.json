@@ -66,6 +66,8 @@
     "ramUsage": "RAM Usage",
     "speak": "Speak",
     "stop": "Stop",
+    "copy": "Copy",
+    "copied": "Copied!",
     "processedWebcamImage": "Processed webcam image",
     "startAgentMessage": "Start an agent to see analysis results here",
     "deleteDetection": "×",

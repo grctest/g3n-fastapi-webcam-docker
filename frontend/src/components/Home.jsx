@@ -62,6 +62,7 @@ export default function Home() {
     const [agentMemoryUsage, setAgentMemoryUsage] = useState({}); // Track memory usage separately
     const [currentSpeech, setCurrentSpeech] = useState(null); // Track current TTS speech
     const [isSpeaking, setIsSpeaking] = useState(false); // Track if TTS is active
+    const [isCopied, setIsCopied] = useState(false); // Track copy status
     
     // Audio settings state
     const [audioSettingsOpen, setAudioSettingsOpen] = useState(false);
@@ -116,6 +117,8 @@ export default function Home() {
             // If dialog content changes while speaking, stop current speech
             stopSpeech();
         }
+        // Reset copy status when dialog content changes
+        setIsCopied(false);
     }, [detectionDialog.content, currentSpeech, stopSpeech]);
 
     // TTS Helper Functions
@@ -157,6 +160,34 @@ export default function Home() {
             setCurrentSpeech(null);
         }
     }, [isSpeaking, stopSpeech, audioSettings]);
+
+    // Copy to clipboard function
+    const copyToClipboard = useCallback(async (text) => {
+        try {
+            // Remove markdown formatting for cleaner copy
+            const cleanText = text.replace(/\*\*/g, '').replace(/\*/g, '');
+            await navigator.clipboard.writeText(cleanText);
+            setIsCopied(true);
+            setTimeout(() => setIsCopied(false), 2000); // Reset after 2 seconds
+        } catch (error) {
+            console.error('Failed to copy to clipboard:', error);
+            // Fallback for older browsers
+            const cleanText = text.replace(/\*\*/g, '').replace(/\*/g, '');
+            const textArea = document.createElement('textarea');
+            textArea.value = cleanText;
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            try {
+                document.execCommand('copy');
+                setIsCopied(true);
+                setTimeout(() => setIsCopied(false), 2000);
+            } catch (fallbackError) {
+                console.error('Fallback copy failed:', fallbackError);
+            }
+            document.body.removeChild(textArea);
+        }
+    }, []);
 
                 // Check for webcam devices on mount
     // Webcam detection logic as a function for manual refresh
@@ -1115,18 +1146,32 @@ export default function Home() {
                             <DialogTitle className="text-xl font-semibold text-gray-900">
                                 {t('Home:detectionResult')} - {detectionDialog.agentName}
                             </DialogTitle>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                className={`flex items-center gap-2 ${
-                                    isSpeaking ? 'bg-red-50 border-red-300 text-red-700 hover:bg-red-100' : 'hover:bg-blue-50'
-                                }`}
-                                onClick={() => speakText(detectionDialog.content, 'dialog', detectionDialog.agentName)}
-                                disabled={!detectionDialog.content}
-                            >
-                                {isSpeaking ? '🔇' : '🔊'}
-                                {isSpeaking ? t('Home:stop') : t('Home:speak')}
-                            </Button>
+                            <div className="flex items-center gap-2">
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className={`flex items-center gap-2 ${
+                                        isSpeaking ? 'bg-red-50 border-red-300 text-red-700 hover:bg-red-100' : 'hover:bg-blue-50'
+                                    }`}
+                                    onClick={() => speakText(detectionDialog.content, 'dialog', detectionDialog.agentName)}
+                                    disabled={!detectionDialog.content}
+                                >
+                                    {isSpeaking ? '🔇' : '🔊'}
+                                    {isSpeaking ? t('Home:stop') : t('Home:speak')}
+                                </Button>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className={`flex items-center gap-2 ${
+                                        isCopied ? 'bg-green-50 border-green-300 text-green-700' : 'hover:bg-gray-50'
+                                    }`}
+                                    onClick={() => copyToClipboard(detectionDialog.content)}
+                                    disabled={!detectionDialog.content}
+                                >
+                                    {isCopied ? '✅' : '📋'}
+                                    {isCopied ? t('Home:copied') : t('Home:copy')}
+                                </Button>
+                            </div>
                         </div>
                     </DialogHeader>
                     <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
