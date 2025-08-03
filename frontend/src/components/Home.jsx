@@ -15,6 +15,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Slider } from "@/components/ui/slider";
+import { Badge } from "@/components/ui/badge";
 
 import { i18n as i18nInstance, locale } from "@/lib/i18n.js";
 import { agentStore } from "../stores/agentStore";
@@ -60,6 +62,16 @@ export default function Home() {
     const [agentMemoryUsage, setAgentMemoryUsage] = useState({}); // Track memory usage separately
     const [currentSpeech, setCurrentSpeech] = useState(null); // Track current TTS speech
     const [isSpeaking, setIsSpeaking] = useState(false); // Track if TTS is active
+    
+    // Audio settings state
+    const [audioSettingsOpen, setAudioSettingsOpen] = useState(false);
+    const [availableVoices, setAvailableVoices] = useState([]);
+    const [audioSettings, setAudioSettings] = useState({
+        voice: null, // Will be set to first available voice
+        rate: 1.0,
+        pitch: 1.0,
+        volume: 1.0
+    });
 
     const webcamRef = useRef(null);
     const agentIntervals = useRef({});
@@ -72,6 +84,18 @@ export default function Home() {
             try {
                 await EasySpeech.init();
                 console.log('EasySpeech initialized successfully');
+                
+                // Load available voices
+                const voices = EasySpeech.voices();
+                setAvailableVoices(voices);
+                
+                // Set default voice if available
+                if (voices.length > 0) {
+                    setAudioSettings(prev => ({
+                        ...prev,
+                        voice: voices[0]
+                    }));
+                }
             } catch (error) {
                 console.error('Failed to initialize EasySpeech:', error);
             }
@@ -103,7 +127,7 @@ export default function Home() {
         }
     }, [isSpeaking]);
 
-    const speakText = useCallback(async (text, detectionId) => {
+    const speakText = useCallback(async (text, detectionId, agentName = '') => {
         if (isSpeaking) {
             stopSpeech();
             return;
@@ -113,12 +137,15 @@ export default function Home() {
             setIsSpeaking(true);
             setCurrentSpeech(detectionId);
             
+            // Prefix with agent name if provided
+            const textToSpeak = agentName ? `${agentName}: ${text}` : text;
+            
             await EasySpeech.speak({
-                text: text.replace(/\*\*/g, '').replace(/\*/g, ''), // Remove markdown formatting
-                voice: EasySpeech.voices()[0], // Use default voice
-                rate: 1.0,
-                pitch: 1.0,
-                volume: 1.0,
+                text: textToSpeak.replace(/\*\*/g, '').replace(/\*/g, ''), // Remove markdown formatting
+                voice: audioSettings.voice || EasySpeech.voices()[0], // Use configured voice or default
+                rate: audioSettings.rate,
+                pitch: audioSettings.pitch,
+                volume: audioSettings.volume,
                 end: () => {
                     setIsSpeaking(false);
                     setCurrentSpeech(null);
@@ -129,7 +156,7 @@ export default function Home() {
             setIsSpeaking(false);
             setCurrentSpeech(null);
         }
-    }, [isSpeaking, stopSpeech]);
+    }, [isSpeaking, stopSpeech, audioSettings]);
 
                 // Check for webcam devices on mount
     // Webcam detection logic as a function for manual refresh
@@ -414,7 +441,7 @@ export default function Home() {
             console.log(`[DEBUG] handleSendImageToAgent: Sending webcam image to FastAPI for agent ${agent.id}.`);
             
             // Use the processImage function from our API utility with the agent's user prompt
-            const userPrompt = agent.userPrompt || "What do you see in this image?";
+            const userPrompt = agent.userPrompt || t('Home:defaultUserPrompt');
             const response = await processImage(agent.id, screenshot, userPrompt);
             console.log(`[DEBUG] handleSendImageToAgent: Received response from FastAPI for agent ${agent.id}:`, response);
 
@@ -539,7 +566,7 @@ export default function Home() {
                 
                 // Auto-speak if TTS is enabled for this agent
                 if (agent.enableTTS && result.resultText) {
-                    speakText(result.resultText, newDetection.id);
+                    speakText(result.resultText, newDetection.id, agent.label);
                 }
             } else {
                 console.error(`[DEBUG] runAgent: Agent ${agent.id} failed. Error: ${result.error}`);
@@ -759,7 +786,7 @@ export default function Home() {
                             <Button 
                                 size="icon" 
                                 variant="ghost" 
-                                title="Refresh webcam" 
+                                title={t('Home:refreshWebcam')} 
                                 onClick={checkWebcam}
                             >
                                 <ReloadIcon className="w-5 h-5" />
@@ -787,7 +814,7 @@ export default function Home() {
                                             }}
                                         >
                                             <SelectTrigger className="w-48 mt-2">
-                                                <SelectValue placeholder="Select webcam" />
+                                                <SelectValue placeholder={t('Home:selectWebcam')} />
                                             </SelectTrigger>
                                             <SelectContent>
                                                 {videoDevices.map(device => (
@@ -816,7 +843,7 @@ export default function Home() {
                                             }}
                                         >
                                             <SelectTrigger className="w-48 mt-2">
-                                                <SelectValue placeholder="Select webcam" />
+                                                <SelectValue placeholder={t('Home:selectWebcam')} />
                                             </SelectTrigger>
                                             <SelectContent>
                                                 {videoDevices.map(device => (
@@ -891,7 +918,7 @@ export default function Home() {
                                                         removeDetection(entry.id);
                                                     }}
                                                 >
-                                                    ×
+                                                    {t('Home:deleteDetection')}
                                                 </Button>
                                             </div>
                                         );
@@ -900,7 +927,7 @@ export default function Home() {
                             ) : (
                                 <div className="text-center text-sm text-muted-foreground p-6 bg-gray-50 rounded border-2 border-dashed border-gray-200">
                                     <div className="mb-1">📊 {t("Home:noDetections")}</div>
-                                    <div className="text-xs text-gray-400">Start an agent to see analysis results here</div>
+                                    <div className="text-xs text-gray-400">{t('Home:startAgentMessage')}</div>
                                 </div>
                             )}
                         </CardContent>
@@ -984,7 +1011,7 @@ export default function Home() {
                                             <Button 
                                                 size="sm" 
                                                 variant="ghost" 
-                                                title={isProcessing ? "Cannot edit while processing" : t("Home:editAgent")}
+                                                title={isProcessing ? t('Home:cannotEditWhileProcessing') : t("Home:editAgent")}
                                                 onClick={() => isProcessing ? null : setEditAgentId(agent.id)}
                                                 disabled={isProcessing}
                                                 className="h-7 w-7 p-0"
@@ -1044,12 +1071,12 @@ export default function Home() {
                                             {agentStatuses[agent.id] && (
                                                 <div className="flex gap-1 flex-wrap">
                                                     <span className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 text-gray-700 rounded-md text-xs font-medium">
-                                                        🖥️ {agentDeviceTypes[agent.id] === 'cuda' ? 'GPU' : 'CPU'}
+                                                        🖥️ {agentDeviceTypes[agent.id] === 'cuda' ? t('Home:gpu') : t('Home:cpu')}
                                                     </span>
                                                     <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-700 rounded-md text-xs font-medium">
                                                         💾 {agentMemoryUsage[agent.id] || imageProcessingStats[agent.id]?.memory_usage_mb 
-                                                            ? `${Math.round(agentMemoryUsage[agent.id] || imageProcessingStats[agent.id].memory_usage_mb)}MB`
-                                                            : 'Loading...'
+                                                            ? `${Math.round(agentMemoryUsage[agent.id] || imageProcessingStats[agent.id].memory_usage_mb)}${t('Home:memoryUnit')}`
+                                                            : t('Home:loading')
                                                         }
                                                     </span>
                                                 </div>
@@ -1086,7 +1113,7 @@ export default function Home() {
                     <DialogHeader className="border-b border-gray-200 pb-4">
                         <div className="flex items-center justify-between">
                             <DialogTitle className="text-xl font-semibold text-gray-900">
-                                Detection Result - {detectionDialog.agentName}
+                                {t('Home:detectionResult')} - {detectionDialog.agentName}
                             </DialogTitle>
                             <Button
                                 variant="outline"
@@ -1094,11 +1121,11 @@ export default function Home() {
                                 className={`flex items-center gap-2 ${
                                     isSpeaking ? 'bg-red-50 border-red-300 text-red-700 hover:bg-red-100' : 'hover:bg-blue-50'
                                 }`}
-                                onClick={() => speakText(detectionDialog.content, 'dialog')}
+                                onClick={() => speakText(detectionDialog.content, 'dialog', detectionDialog.agentName)}
                                 disabled={!detectionDialog.content}
                             >
                                 {isSpeaking ? '🔇' : '🔊'}
-                                {isSpeaking ? 'Stop' : 'Speak'}
+                                {isSpeaking ? t('Home:stop') : t('Home:speak')}
                             </Button>
                         </div>
                     </DialogHeader>
@@ -1107,12 +1134,12 @@ export default function Home() {
                         {detectionDialog.imageData && (
                             <div className="space-y-3">
                                 <h3 className="font-semibold text-base text-gray-800 border-b border-gray-300 pb-2">
-                                    📸 Processed Image
+                                    📸 {t('Home:processedImage')}
                                 </h3>
                                 <div className="border-2 border-gray-200 rounded-lg p-3 bg-gray-50 shadow-sm">
                                     <img 
                                         src={detectionDialog.imageData} 
-                                        alt="Processed webcam image" 
+                                        alt={t('Home:processedWebcamImage')} 
                                         className="w-full h-auto rounded-md shadow-sm"
                                         style={{ maxHeight: '400px', objectFit: 'contain' }}
                                     />
@@ -1123,7 +1150,7 @@ export default function Home() {
                         {/* Text Panel */}
                         <div className="space-y-3">
                             <h3 className="font-semibold text-base text-gray-800 border-b border-gray-300 pb-2">
-                                🔍 Analysis Result
+                                🔍 {t('Home:analysisResult')}
                             </h3>
                             <div className="p-4 bg-gray-50 border-2 border-gray-200 rounded-lg text-sm leading-relaxed shadow-sm" 
                                  style={{ minHeight: '200px', maxHeight: '400px', overflowY: 'auto' }}>
@@ -1166,7 +1193,7 @@ export default function Home() {
                                         <div className="flex justify-between">
                                             <span className="font-medium text-blue-700">⚡ Processing Time:</span>
                                             <span className="text-blue-600">
-                                                {(detectionDialog.processingTime / 1000).toFixed(2)}s
+                                                {(detectionDialog.processingTime / 1000).toFixed(2)}{t('Home:timeUnit')}
                                             </span>
                                         </div>
                                     )}
@@ -1174,7 +1201,7 @@ export default function Home() {
                                         <div className="flex justify-between">
                                             <span className="font-medium text-blue-700">💾 RAM Usage:</span>
                                             <span className="text-blue-600">
-                                                {Math.round(detectionDialog.memoryUsage)}MB
+                                                {Math.round(detectionDialog.memoryUsage)}{t('Home:memoryUnit')}
                                             </span>
                                         </div>
                                     )}
@@ -1184,6 +1211,110 @@ export default function Home() {
                     </div>
                 </DialogContent>
             </Dialog>
+            
+            {/* Audio Settings Footer */}
+            <div className="w-full bg-gray-50 border-t border-gray-200 px-4 py-2 flex items-center justify-center">
+                <Dialog open={audioSettingsOpen} onOpenChange={setAudioSettingsOpen}>
+                    <DialogTrigger asChild>
+                        <Button 
+                            variant="outline" 
+                            size="sm"
+                            className="flex items-center gap-2 hover:bg-gray-100"
+                        >
+                            🔊 {t('Home:audioSettings')}
+                        </Button>
+                    </DialogTrigger>
+                    <DialogContent className="max-w-md">
+                        <DialogHeader>
+                            <DialogTitle>{t('Home:voiceSettings')}</DialogTitle>
+                        </DialogHeader>
+                        <div className="space-y-6 mt-4">
+                            {/* Voice Selection */}
+                            <div className="space-y-2">
+                                <label className="text-sm font-medium">{t('Home:voice')}</label>
+                                <Select
+                                    value={audioSettings.voice?.name || ''}
+                                    onValueChange={(voiceName) => {
+                                        const voice = availableVoices.find(v => v.name === voiceName);
+                                        setAudioSettings(prev => ({ ...prev, voice }));
+                                    }}
+                                >
+                                    <SelectTrigger>
+                                        <SelectValue placeholder={t('Home:selectVoice')} />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {availableVoices.map(voice => (
+                                            <SelectItem key={voice.name} value={voice.name}>
+                                                {voice.name} ({voice.lang})
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </div>
+
+                            {/* Speech Rate */}
+                            <div className="space-y-2">
+                                <div className="flex justify-between">
+                                    <label className="text-sm font-medium">{t('Home:speechRate')}</label>
+                                    <span className="text-sm text-gray-500">{audioSettings.rate.toFixed(1)}x</span>
+                                </div>
+                                <Slider
+                                    value={[audioSettings.rate]}
+                                    onValueChange={([value]) => setAudioSettings(prev => ({ ...prev, rate: value }))}
+                                    min={0.1}
+                                    max={3.0}
+                                    step={0.1}
+                                    className="w-full"
+                                />
+                            </div>
+
+                            {/* Speech Pitch */}
+                            <div className="space-y-2">
+                                <div className="flex justify-between">
+                                    <label className="text-sm font-medium">{t('Home:speechPitch')}</label>
+                                    <span className="text-sm text-gray-500">{audioSettings.pitch.toFixed(1)}</span>
+                                </div>
+                                <Slider
+                                    value={[audioSettings.pitch]}
+                                    onValueChange={([value]) => setAudioSettings(prev => ({ ...prev, pitch: value }))}
+                                    min={0.0}
+                                    max={2.0}
+                                    step={0.1}
+                                    className="w-full"
+                                />
+                            </div>
+
+                            {/* Volume */}
+                            <div className="space-y-2">
+                                <div className="flex justify-between">
+                                    <label className="text-sm font-medium">{t('Home:speechVolume')}</label>
+                                    <span className="text-sm text-gray-500">{Math.round(audioSettings.volume * 100)}%</span>
+                                </div>
+                                <Slider
+                                    value={[audioSettings.volume]}
+                                    onValueChange={([value]) => setAudioSettings(prev => ({ ...prev, volume: value }))}
+                                    min={0.0}
+                                    max={1.0}
+                                    step={0.05}
+                                    className="w-full"
+                                />
+                            </div>
+
+                            {/* Test Voice Button */}
+                            <div className="pt-4 border-t">
+                                <Button 
+                                    onClick={() => speakText(t('Home:testText'), 'test', t('Home:audioSettings'))}
+                                    disabled={isSpeaking || !audioSettings.voice}
+                                    className="w-full"
+                                    variant="outline"
+                                >
+                                    {isSpeaking ? '🔇 Speaking...' : `🔊 ${t('Home:testVoice')}`}
+                                </Button>
+                            </div>
+                        </div>
+                    </DialogContent>
+                </Dialog>
+            </div>
         </div>
     );
 }

@@ -120,10 +120,10 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
         const minInterval = getDefaultInterval(device, maxLength);
         
         return [
-            { value: minInterval, label: `Optimal (${minInterval}s)`, description: "Based on processing time" },
-            { value: Math.ceil(minInterval * 1.5), label: `Conservative (${Math.ceil(minInterval * 1.5)}s)`, description: "50% extra buffer" },
-            { value: Math.ceil(minInterval * 2), label: `Relaxed (${Math.ceil(minInterval * 2)}s)`, description: "100% extra buffer" },
-            { value: Math.ceil(minInterval * 3), label: `Slow (${Math.ceil(minInterval * 3)}s)`, description: "Low resource usage" },
+            { value: minInterval, label: `${t('PersonaForm:intervalOptimal')} (${minInterval}s)`, description: t('PersonaForm:intervalBasedOnProcessing') },
+            { value: Math.ceil(minInterval * 1.5), label: `${t('PersonaForm:intervalConservative')} (${Math.ceil(minInterval * 1.5)}s)`, description: t('PersonaForm:intervalExtraBuffer') },
+            { value: Math.ceil(minInterval * 2), label: `${t('PersonaForm:intervalRelaxed')} (${Math.ceil(minInterval * 2)}s)`, description: t('PersonaForm:intervalDoubleBuffer') },
+            { value: Math.ceil(minInterval * 3), label: `${t('PersonaForm:intervalSlow')} (${Math.ceil(minInterval * 3)}s)`, description: t('PersonaForm:intervalLowResource') },
         ];
     };
 
@@ -141,7 +141,7 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
         if (!label.trim()) newErrors.label = t('PersonaForm:labelRequired');
         if (!description.trim()) newErrors.description = t('PersonaForm:descriptionRequired');
         if (!systemPrompt.trim()) newErrors.systemPrompt = t('PersonaForm:promptRequired');
-        if (!userPrompt.trim()) newErrors.userPrompt = 'User prompt is required';
+        if (!userPrompt.trim()) newErrors.userPrompt = t('PersonaForm:userPromptRequired');
         if (maxLength < 1 || maxLength > 8192) newErrors.maxLength = 'Max length must be between 1 and 8192';
         setErrors(newErrors);
         return Object.keys(newErrors).length === 0;
@@ -358,70 +358,70 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
                     </div>
 
                     <div className="space-y-2">
-                        <Label htmlFor="userPrompt">User Prompt Template</Label>
+                        <Label htmlFor="userPrompt">{t('PersonaForm:userPromptTemplate')}</Label>
                         <Textarea
                             id="userPrompt"
                             name="userPrompt"
                             value={userPrompt}
                             onChange={handleUserPromptChange}
-                            placeholder="e.g., 'Detect fire in this image', 'What objects do you see?'"
+                            placeholder={t('PersonaForm:userPromptPlaceholder')}
                             maxLength={500}
                             className={`min-h-[80px] ${errors.userPrompt ? 'border-red-500' : ''}`}
                         />
                         <div className="text-xs text-muted-foreground flex justify-between">
-                            <span>{errors.userPrompt || 'This will be sent with each image for analysis'}</span>
+                            <span>{errors.userPrompt || t('PersonaForm:userPromptHelp')}</span>
                             <span>{userPrompt.length} / 500</span>
                         </div>
                     </div>
 
                     {/* Technical Configuration Section */}
                     <div className="border-t pt-4">
-                        <h3 className="text-sm font-medium mb-3">Technical Configuration</h3>
+                        <h3 className="text-sm font-medium mb-3">{t('PersonaForm:technicalConfiguration')}</h3>
                         
                         <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-2">
-                                <Label htmlFor="device">Compute Device</Label>
+                                <Label htmlFor="device">{t('PersonaForm:computeDevice')}</Label>
                                 <Select value={device} onValueChange={setDevice} disabled={loadingCapabilities}>
                                     <SelectTrigger id="device">
-                                        <SelectValue placeholder={loadingCapabilities ? "Loading..." : "Select device"} />
+                                        <SelectValue placeholder={loadingCapabilities ? t('PersonaForm:loadingCapabilities') : t('PersonaForm:selectDevice')} />
                                     </SelectTrigger>
                                     <SelectContent>
                                         {loadingCapabilities ? (
-                                            <SelectItem value="loading" disabled>Loading capabilities...</SelectItem>
+                                            <SelectItem value="loading" disabled>{t('PersonaForm:loadingDeviceCapabilities')}</SelectItem>
                                         ) : (
                                             <>
-                                                <SelectItem value="auto">Auto-detect</SelectItem>
+                                                <SelectItem value="auto">{t('PersonaForm:autoDetect')}</SelectItem>
                                                 {deviceCapabilities?.cuda_available && (
-                                                    <SelectItem value="cuda">GPU (CUDA)</SelectItem>
+                                                    <SelectItem value="cuda">{t('PersonaForm:gpuCuda')}</SelectItem>
                                                 )}
-                                                <SelectItem value="cpu">CPU Only</SelectItem>
+                                                <SelectItem value="cpu">{t('PersonaForm:cpuOnly')}</SelectItem>
                                             </>
                                         )}
                                     </SelectContent>
                                 </Select>
                                 <div className="text-xs text-muted-foreground">
-                                    {loadingCapabilities ? "Checking device capabilities..." : 
-                                     deviceCapabilities?.cuda_available ? "GPU is faster, CPU is more compatible" : "GPU not available - CPU only"}
+                                    {loadingCapabilities ? t('PersonaForm:loadingDeviceCapabilities') : 
+                                     deviceCapabilities?.cuda_available ? t('PersonaForm:deviceCapabilitiesHelp') : t('PersonaForm:deviceCapabilitiesNoGpu')}
                                 </div>
                             </div>
 
                             <div className="space-y-2">
-                                <Label htmlFor="loadIn4bit">4-bit Quantization</Label>
+                                <Label htmlFor="loadIn4bit">{t('PersonaForm:quantization')}</Label>
                                 <Select value={loadIn4bit.toString()} onValueChange={val => setLoadIn4bit(val === 'true')}>
                                     <SelectTrigger id="loadIn4bit">
-                                        <SelectValue placeholder="Select quantization" />
+                                        <SelectValue placeholder={t('PersonaForm:selectQuantization')} />
                                     </SelectTrigger>
                                     <SelectContent>
-                                        <SelectItem value="true">Enabled (~10GB RAM)</SelectItem>
-                                        <SelectItem value="false">Disabled (~20GB RAM)</SelectItem>
+                                        <SelectItem value="true">{t('PersonaForm:quantizationEnabled')}</SelectItem>
+                                        <SelectItem value="false">{t('PersonaForm:quantizationDisabled')}</SelectItem>
                                     </SelectContent>
                                 </Select>
                                 <div className="text-xs text-muted-foreground">
                                     <div className="mb-1">
-                                        <span className="font-semibold">Enabled:</span> Uses ~15GB RAM, faster loading, slightly reduced quality
+                                        <span className="font-semibold">{t('PersonaForm:quantizationEnabled').split(' ')[0]}:</span> {t('PersonaForm:quantizationEnabledHelp')}
                                     </div>
                                     <div>
-                                        <span className="font-semibold">Disabled:</span> Uses ~20GB RAM, slower loading, full precision quality
+                                        <span className="font-semibold">{t('PersonaForm:quantizationDisabled').split(' ')[0]}:</span> {t('PersonaForm:quantizationDisabledHelp')}
                                     </div>
                                 </div>
                             </div>
@@ -430,11 +430,11 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
 
                     {/* Generation Parameters Section */}
                     <div className="border-t pt-4">
-                        <h3 className="text-sm font-medium mb-3">Generation Parameters</h3>
+                        <h3 className="text-sm font-medium mb-3">{t('PersonaForm:generationParameters')}</h3>
                         
                         <div className="grid grid-cols-2 gap-4">
                             <div className="space-y-2">
-                                <Label htmlFor="maxLength">Max Response Length</Label>
+                                <Label htmlFor="maxLength">{t('PersonaForm:maxResponseLength')}</Label>
                                 <Input
                                     type="number"
                                     id="maxLength"
@@ -445,24 +445,24 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
                                     className={errors.maxLength ? 'border-red-500' : ''}
                                 />
                                 <div className="text-xs text-muted-foreground">
-                                    {errors.maxLength || 'Maximum tokens to generate (1-8192)'}
+                                    {errors.maxLength || t('PersonaForm:maxLengthHelp')}
                                 </div>
                             </div>
                         </div>
 
                         <div className="space-y-2 mt-4">
-                            <Label htmlFor="doSample">Sampling Mode</Label>
+                            <Label htmlFor="doSample">{t('PersonaForm:samplingMode')}</Label>
                             <Select value={doSample.toString()} onValueChange={val => setDoSample(val === 'true')}>
                                 <SelectTrigger id="doSample">
-                                    <SelectValue placeholder="Select sampling mode" />
+                                    <SelectValue placeholder={t('PersonaForm:selectSamplingMode')} />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="true">Sampling (More varied)</SelectItem>
-                                    <SelectItem value="false">Greedy (More deterministic)</SelectItem>
+                                    <SelectItem value="true">{t('PersonaForm:samplingModeVaried')}</SelectItem>
+                                    <SelectItem value="false">{t('PersonaForm:samplingModeDeterministic')}</SelectItem>
                                 </SelectContent>
                             </Select>
                             <div className="text-xs text-muted-foreground">
-                                Sampling uses top-k, greedy always picks most likely
+                                {t('PersonaForm:samplingModeHelp')}
                             </div>
                         </div>
 
@@ -474,11 +474,11 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
                                     onCheckedChange={setEnableTTS}
                                 />
                                 <Label htmlFor="enableTTS" className="text-sm font-medium">
-                                    🔊 Read aloud detection results
+                                    🔊 {t('PersonaForm:enableTTS')}
                                 </Label>
                             </div>
                             <div className="text-xs text-muted-foreground">
-                                Automatically read detection results using text-to-speech
+                                {t('PersonaForm:enableTTSHelp')}
                             </div>
                         </div>
                     </div>
@@ -487,11 +487,11 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
                         <Label htmlFor="interval">{t('PersonaForm:interval')}</Label>
                         <Select value={interval} onValueChange={val => setInterval(Number(val))} disabled={loadingCapabilities || !deviceCapabilities}>
                             <SelectTrigger id="interval">
-                                <SelectValue placeholder={loadingCapabilities ? "Loading..." : (t('PersonaForm:intervalPlaceholder') || 'Interval')} />
+                                <SelectValue placeholder={loadingCapabilities ? t('PersonaForm:loadingCapabilities') : t('PersonaForm:intervalPlaceholder')} />
                             </SelectTrigger>
                             <SelectContent>
                                 {loadingCapabilities || !deviceCapabilities ? (
-                                    <SelectItem value="loading" disabled>Loading device info...</SelectItem>
+                                    <SelectItem value="loading" disabled>{t('PersonaForm:loadingDeviceInfo')}</SelectItem>
                                 ) : (
                                     getIntervalOptions().map(option => (
                                         <SelectItem key={option.value} value={option.value}>
@@ -502,11 +502,14 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
                             </SelectContent>
                         </Select>
                         <div className="text-xs text-muted-foreground">
-                            <div>Set how often this agent runs (seconds).</div>
+                            <div>{t('PersonaForm:intervalHelp')}</div>
                             {deviceCapabilities && !loadingCapabilities && (
                                 <div className="mt-1 text-blue-600">
-                                    Processing time: ~{calculateProcessingTime(maxLength, deviceCapabilities?.cuda_available ? device : 'cpu')}s 
-                                    for {maxLength} tokens ({deviceCapabilities?.cuda_available && device === 'cuda' ? '2' : '1'} tokens/sec)
+                                    {t('PersonaForm:processingTimeHelp', {
+                                        time: calculateProcessingTime(maxLength, deviceCapabilities?.cuda_available ? device : 'cpu'),
+                                        tokens: maxLength,
+                                        rate: deviceCapabilities?.cuda_available && device === 'cuda' ? '2' : '1'
+                                    })}
                                 </div>
                             )}
                         </div>
