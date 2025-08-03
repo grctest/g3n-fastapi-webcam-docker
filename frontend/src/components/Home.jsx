@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import ReactMarkdown from 'react-markdown';
+import EasySpeech from 'easy-speech';
 import { useStore } from "@nanostores/react";
 import Webcam from "react-webcam";
 import { useTranslation } from "react-i18next";
@@ -60,11 +61,78 @@ export default function Home() {
     const [agentDeviceTypes, setAgentDeviceTypes] = useState({}); // Track actual device types for interval adjustment
     const [agentTimers, setAgentTimers] = useState({}); // Track processing timers for each agent
     const [agentMemoryUsage, setAgentMemoryUsage] = useState({}); // Track memory usage separately
+    const [currentSpeech, setCurrentSpeech] = useState(null); // Track current TTS speech
+    const [isSpeaking, setIsSpeaking] = useState(false); // Track if TTS is active
 
     const webcamRef = useRef(null);
     const agentIntervals = useRef({});
     const [webcamAvailable, setWebcamAvailable] = useState(false);
     const [checkingWebcam, setCheckingWebcam] = useState(false);
+
+    // Initialize EasySpeech on component mount
+    useEffect(() => {
+        const initSpeech = async () => {
+            try {
+                await EasySpeech.init();
+                console.log('EasySpeech initialized successfully');
+            } catch (error) {
+                console.error('Failed to initialize EasySpeech:', error);
+            }
+        };
+        initSpeech();
+    }, []);
+
+    // Cleanup TTS on component unmount and when dialog content changes
+    useEffect(() => {
+        return () => {
+            stopSpeech();
+        };
+    }, [stopSpeech]);
+
+    // Stop TTS when detection dialog content changes
+    useEffect(() => {
+        if (currentSpeech === 'dialog' && detectionDialog.open) {
+            // If dialog content changes while speaking, stop current speech
+            stopSpeech();
+        }
+    }, [detectionDialog.content, currentSpeech, stopSpeech]);
+
+    // TTS Helper Functions
+    const stopSpeech = useCallback(() => {
+        if (isSpeaking) {
+            EasySpeech.cancel();
+            setIsSpeaking(false);
+            setCurrentSpeech(null);
+        }
+    }, [isSpeaking]);
+
+    const speakText = useCallback(async (text, detectionId) => {
+        if (isSpeaking) {
+            stopSpeech();
+            return;
+        }
+
+        try {
+            setIsSpeaking(true);
+            setCurrentSpeech(detectionId);
+            
+            await EasySpeech.speak({
+                text: text.replace(/\*\*/g, '').replace(/\*/g, ''), // Remove markdown formatting
+                voice: EasySpeech.voices()[0], // Use default voice
+                rate: 1.0,
+                pitch: 1.0,
+                volume: 1.0,
+                end: () => {
+                    setIsSpeaking(false);
+                    setCurrentSpeech(null);
+                }
+            });
+        } catch (error) {
+            console.error('TTS Error:', error);
+            setIsSpeaking(false);
+            setCurrentSpeech(null);
+        }
+    }, [isSpeaking, stopSpeech]);
 
                 // Check for webcam devices on mount
     // Webcam detection logic as a function for manual refresh
@@ -489,6 +557,11 @@ export default function Home() {
                     isError: false
                 };
                 addDetection(newDetection);
+                
+                // Auto-speak if TTS is enabled for this agent
+                if (agent.enableTTS && result.resultText) {
+                    speakText(result.resultText, newDetection.id);
+                }
             } else {
                 console.error(`[DEBUG] runAgent: Agent ${agent.id} failed. Error: ${result.error}`);
                 // Add error to Active Detections for better UX
@@ -832,6 +905,10 @@ export default function Home() {
                                                     className="h-6 w-6 p-0 text-gray-500 hover:text-red-600 hover:bg-red-50"
                                                     onClick={(e) => {
                                                         e.stopPropagation();
+                                                        // Stop TTS if this detection is currently being spoken
+                                                        if (currentSpeech === entry.id) {
+                                                            stopSpeech();
+                                                        }
                                                         removeDetection(entry.id);
                                                     }}
                                                 >
@@ -1019,12 +1096,32 @@ export default function Home() {
             </div>
             
             {/* Detection Dialog for viewing full text and image */}
-            <Dialog open={detectionDialog.open} onOpenChange={(open) => setDetectionDialog({...detectionDialog, open})}>
+            <Dialog 
+                open={detectionDialog.open} 
+                onOpenChange={(open) => {
+                    if (!open) stopSpeech(); // Stop TTS when dialog closes
+                    setDetectionDialog({...detectionDialog, open});
+                }}
+            >
                 <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto bg-white">
                     <DialogHeader className="border-b border-gray-200 pb-4">
-                        <DialogTitle className="text-xl font-semibold text-gray-900">
-                            Detection Result - {detectionDialog.agentName}
-                        </DialogTitle>
+                        <div className="flex items-center justify-between">
+                            <DialogTitle className="text-xl font-semibold text-gray-900">
+                                Detection Result - {detectionDialog.agentName}
+                            </DialogTitle>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                className={`flex items-center gap-2 ${
+                                    isSpeaking ? 'bg-red-50 border-red-300 text-red-700 hover:bg-red-100' : 'hover:bg-blue-50'
+                                }`}
+                                onClick={() => speakText(detectionDialog.content, 'dialog')}
+                                disabled={!detectionDialog.content}
+                            >
+                                {isSpeaking ? '🔇' : '🔊'}
+                                {isSpeaking ? 'Stop' : 'Speak'}
+                            </Button>
+                        </div>
                     </DialogHeader>
                     <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
                         {/* Image Panel */}

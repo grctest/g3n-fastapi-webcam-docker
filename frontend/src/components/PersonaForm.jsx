@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { agentStore } from "@/stores/agentStore";
 import { defaultPersonas } from "@/personas/defaultPersonas";
@@ -26,6 +27,7 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
     const [maxLength, setMaxLength] = useState(512);
     const [loadIn4bit, setLoadIn4bit] = useState(true);
     const [doSample, setDoSample] = useState(false); // Default to greedy sampling
+    const [enableTTS, setEnableTTS] = useState(false); // TTS toggle
     const personas = defaultPersonas;
     const [errors, setErrors] = useState({});
     const [isSaving, setIsSaving] = useState(false);
@@ -80,6 +82,7 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
             setMaxLength(initialPersona.maxLength || 512);
             setLoadIn4bit(initialPersona.loadIn4bit !== undefined ? initialPersona.loadIn4bit : true);
             setDoSample(initialPersona.doSample !== undefined ? initialPersona.doSample : false);
+            setEnableTTS(initialPersona.enableTTS !== undefined ? initialPersona.enableTTS : false);
             setInterval(initialPersona.interval || getDefaultInterval(initialPersona.device || 'auto'));
         } else {
             setIsCustom(true);
@@ -203,6 +206,7 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
                     maxLength: maxLength,
                     loadIn4bit: loadIn4bit,
                     doSample: doSample,
+                    enableTTS: enableTTS,
                     interval: interval,
                     paused: true,
                     id: initialPersona?.id || `agent-${Date.now()}`
@@ -215,6 +219,7 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
                     maxLength: maxLength,
                     loadIn4bit: loadIn4bit,
                     doSample: doSample,
+                    enableTTS: enableTTS,
                     interval: interval,
                     paused: true,
                     id: initialPersona?.id || `agent-${Date.now()}`
@@ -474,6 +479,22 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
                             </Select>
                             <div className="text-xs text-muted-foreground">
                                 Sampling uses top-k, greedy always picks most likely
+                            </div>
+                        </div>
+
+                        <div className="space-y-2 mt-4">
+                            <div className="flex items-center space-x-2">
+                                <Switch
+                                    id="enableTTS"
+                                    checked={enableTTS}
+                                    onCheckedChange={setEnableTTS}
+                                />
+                                <Label htmlFor="enableTTS" className="text-sm font-medium">
+                                    🔊 Read aloud detection results
+                                </Label>
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                                Automatically read detection results using text-to-speech
                             </div>
                         </div>
                     </div>
