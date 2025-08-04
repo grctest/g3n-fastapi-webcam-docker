@@ -18,14 +18,10 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install frontend dependencies
+      - name: Install and build frontend
         run: |
           cd frontend
-          npm ci
-
-      - name: Build Astro frontend
-        run: |
-          cd frontend
+          npm install
           npm run build
 
       # Set up Python (no need for full Anaconda in CI)
