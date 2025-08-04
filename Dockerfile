@@ -2,9 +2,15 @@ FROM python:3.13.5
 
 WORKDIR /code
 
-# Install system dependencies
+# Install dependencies
 RUN apt-get update && apt-get install -y \
     wget \
+    lsb-release \
+    software-properties-common \
+    gnupg \
+    cmake \
+    clang \
+    && bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)" \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -17,8 +23,8 @@ RUN pip install --no-cache-dir --upgrade -r /code/requirements.txt
 # Copy application code
 COPY ./app /code/app
 
-# Create models directory
-RUN mkdir -p /code/app/models
+# Copy frontend code
+COPY ./frontend/astroDist /code/frontend/astroDist
 
 EXPOSE 8080
 
