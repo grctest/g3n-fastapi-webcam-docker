@@ -22,7 +22,7 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
     const [description, setDescription] = useState('');
     const [systemPrompt, setSystemPrompt] = useState('');
     const [userPrompt, setUserPrompt] = useState('');
-    const [device, setDevice] = useState('auto');
+    const [device, setDevice] = useState('cpu'); // Default to CPU, will be updated based on capabilities
     const [maxLength, setMaxLength] = useState(100);
     const [doSample, setDoSample] = useState(false); // Default to greedy sampling
     const [enableTTS, setEnableTTS] = useState(true); // TTS toggle - enabled by default
@@ -41,9 +41,11 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
             setDeviceCapabilities(window.globalDeviceCapabilities);
             setLoadingCapabilities(false);
             
-            // If CUDA is not compatible (even if available), switch to CPU
-            if (window.globalDeviceCapabilities.cuda_available && !window.globalDeviceCapabilities.cuda_compatible && (device === 'cuda' || device === 'auto')) {
-                setDevice(window.globalDeviceCapabilities.recommended_device);
+            // Set device based on GPU compatibility
+            if (window.globalDeviceCapabilities.cuda_available && window.globalDeviceCapabilities.cuda_compatible) {
+                setDevice('cuda'); // Use GPU if available and compatible
+            } else {
+                setDevice('cpu'); // Use CPU if GPU not available or not compatible
             }
         } else {
             // Fallback: fetch capabilities if not available globally
@@ -54,9 +56,11 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
                     setDeviceCapabilities(capabilities);
                     window.globalDeviceCapabilities = capabilities; // Cache globally
                     
-                    // If CUDA is not compatible (even if available), switch to CPU
-                    if (capabilities.cuda_available && !capabilities.cuda_compatible && (device === 'cuda' || device === 'auto')) {
-                        setDevice(capabilities.recommended_device);
+                    // Set device based on GPU compatibility
+                    if (capabilities.cuda_available && capabilities.cuda_compatible) {
+                        setDevice('cuda'); // Use GPU if available and compatible
+                    } else {
+                        setDevice('cpu'); // Use CPU if GPU not available or not compatible
                     }
                 } catch (error) {
                     console.error('Failed to fetch device capabilities:', error);
@@ -71,9 +75,7 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
                     setDeviceCapabilities(safeDefaults);
                     window.globalDeviceCapabilities = safeDefaults;
                     
-                    if (device === 'cuda') {
-                        setDevice('cpu');
-                    }
+                    setDevice('cpu'); // Always use CPU when capabilities fetch fails
                 } finally {
                     setLoadingCapabilities(false);
                 }
@@ -95,11 +97,11 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
             setDescription(initialPersona.description || '');
             setSystemPrompt(initialPersona.systemPrompt || 'You are a helpful assistant.');
             setUserPrompt(initialPersona.userPrompt || 'What do you see in this image?');
-            setDevice(initialPersona.device || 'auto');
+            // Don't override device from capabilities detection - let the useEffect handle it
             setMaxLength(initialPersona.maxLength || 100);
             setDoSample(initialPersona.doSample !== undefined ? initialPersona.doSample : false);
             setEnableTTS(initialPersona.enableTTS !== undefined ? initialPersona.enableTTS : true);
-            setInterval(initialPersona.interval || getDefaultInterval(initialPersona.device || 'auto'));
+            setInterval(initialPersona.interval || getDefaultInterval(initialPersona.device || 'cpu'));
             setCaptureMode(initialPersona.captureMode || 'manual');
         } else {
             setIsCustom(true);
@@ -108,11 +110,11 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
             setDescription('');
             setSystemPrompt('You are a helpful assistant.');
             setUserPrompt('What do you see in this image?');
-            setDevice('auto');
+            // Don't set device here - let capabilities detection handle it
             setMaxLength(100);
             setDoSample(false); // Default to greedy sampling
             setEnableTTS(true); // Default to enabled
-            setInterval(getDefaultInterval('auto'));
+            setInterval(getDefaultInterval('cpu'));
             setCaptureMode('manual'); // Default to manual
         }
     }, [initialPersona, agentId, personas]);
@@ -158,6 +160,23 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
         }
     }, [device, maxLength, deviceCapabilities, initialPersona]);
 
+    // Separate effect to handle device setting for existing personas
+    useEffect(() => {
+        if (initialPersona && deviceCapabilities) {
+            // For existing personas, respect their device preference if it's compatible
+            const preferredDevice = initialPersona.device || 'cpu';
+            
+            if (preferredDevice === 'cuda' && deviceCapabilities.cuda_available && deviceCapabilities.cuda_compatible) {
+                setDevice('cuda');
+            } else if (preferredDevice === 'auto' || preferredDevice === 'cuda') {
+                // If persona wanted auto or cuda but GPU isn't compatible, fall back to CPU
+                setDevice('cpu');
+            } else {
+                setDevice('cpu');
+            }
+        }
+    }, [initialPersona, deviceCapabilities]);
+
     const validate = () => {
         if (!isCustom) return true; // No validation needed if selecting an existing persona
         const newErrors = {};
@@ -184,7 +203,7 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
             setDescription('');
             setSystemPrompt('You are a helpful assistant.');
             setUserPrompt('What do you see in this image?');
-            setDevice('auto');
+            // Don't set device here - let capabilities detection handle it
             setMaxLength(100);
             setDoSample(true);
             setCaptureMode('interval');
@@ -196,7 +215,7 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
                 setDescription(selected.description || '');
                 setSystemPrompt(selected.systemPrompt || 'You are a helpful assistant.');
                 setUserPrompt(selected.userPrompt || 'What do you see in this image?');
-                setDevice(selected.device || 'auto');
+                // Don't override device from capabilities detection
                 setMaxLength(selected.maxLength || 100);
                 setDoSample(selected.doSample !== undefined ? selected.doSample : true);
                 setEnableTTS(selected.enableTTS !== undefined ? selected.enableTTS : true); // Default to enabled
@@ -432,7 +451,6 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
                                         <SelectItem value="loading" disabled>{t('PersonaForm:loadingDeviceCapabilities')}</SelectItem>
                                     ) : (
                                         <>
-                                            <SelectItem value="auto">{t('PersonaForm:autoDetect')}</SelectItem>
                                             {deviceCapabilities?.cuda_available && deviceCapabilities?.cuda_compatible && (
                                                 <SelectItem value="cuda">{t('PersonaForm:gpuCuda')}</SelectItem>
                                             )}

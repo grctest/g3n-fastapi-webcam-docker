@@ -12,7 +12,7 @@ A modern web application featuring real-time webcam analysis powered by Google's
 ## 📋 Development requirements
 
 - Python 3.11+
-- Node.js 18+ (for frontend development)
+- Node.js 22+ (for frontend development)
 - CUDA-compatible GPU (optional, but recommended)
 - Webcam/Camera device
 - 64GB+ RAM
@@ -24,11 +24,17 @@ If you're not interested in making changes to the project and building the image
 
 ### Step 1: Pull the image from docker hub
 
-NOTE: Docker hub image not yet available - you must build it locally for the time being
+Run the following command in the terminal:
+
+`docker pull grctest/gemma3n_webcam_app`
 
 ### Step 2: Create and run the container
 
-NOTE: Docker hub image not yet available - you must build it locally for the time being
+Then once again, within a terminal after downloading the image run this command:
+
+`docker run -p 8080:8080 --gpus all grctest/gemma3n_webcam_app`
+
+The docker container will then run, and you can then navigate to the webapp at `127.0.0.1:8080/`
 
 ## 🛠️ Developer Installation & Setup
 
@@ -48,6 +54,7 @@ pip install -r requirements.txt
 
 # Download the Gemma model
 pip install -U "huggingface_hub[cli]"
+huggingface-cli login --token YOUR_HUGGINGFACE_TOKEN
 huggingface-cli download google/gemma-3n-E2B-it --local-dir app/models/google/gemma-3n-E2B-it
 ```
 
@@ -56,7 +63,7 @@ huggingface-cli download google/gemma-3n-E2B-it --local-dir app/models/google/ge
 #### Build the Frontend (Required)
 
 1. **Open WSL (Windows Subsystem for Linux)**
-2. **Navigate to frontend directory and build:**
+2. **Navigate to frontend directory to build it:**
    ```bash
    cd frontend
    npm install
@@ -73,9 +80,6 @@ This will provide both the REST API access to python functions, as well as host 
 Or you can build the docker image manually & run it in a dev container:
 
 ```bash
-# Clone the repository
-git clone https://github.com/grctest/g3n-fastapi-webcam-docker.git
-cd g3n-fastapi-webcam-docker
 docker build -t gemma3n_webcam_app .
 docker run -p 8080:8080 --gpus all gemma3n_webcam_app
 ```

@@ -2,15 +2,21 @@ FROM python:3.13.5
 
 WORKDIR /code
 
-# Install dependencies
+# Update package lists and install base dependencies
 RUN apt-get update && apt-get install -y \
     wget \
+    curl \
+    gnupg \
     lsb-release \
     software-properties-common \
-    gnupg \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Fix GPG issues and install build tools
+RUN apt-get update && apt-get install -y \
     cmake \
     clang \
-    && bash -c "$(wget -O - https://apt.llvm.org/llvm.sh)" \
+    build-essential \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
