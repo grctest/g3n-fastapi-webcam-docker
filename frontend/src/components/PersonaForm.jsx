@@ -25,44 +25,63 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
     const [device, setDevice] = useState('auto');
     const [maxLength, setMaxLength] = useState(100);
     const [doSample, setDoSample] = useState(false); // Default to greedy sampling
-    const [enableTTS, setEnableTTS] = useState(false); // TTS toggle
+    const [enableTTS, setEnableTTS] = useState(true); // TTS toggle - enabled by default
     const personas = defaultPersonas;
     const [errors, setErrors] = useState({});
     const [isSaving, setIsSaving] = useState(false);
     const [interval, setInterval] = useState(initialPersona?.interval || 10);
-    const [captureMode, setCaptureMode] = useState(initialPersona?.captureMode || 'interval');
+    const [captureMode, setCaptureMode] = useState(initialPersona?.captureMode || 'manual');
     const [deviceCapabilities, setDeviceCapabilities] = useState(null);
-    const [loadingCapabilities, setLoadingCapabilities] = useState(true);
+    const [loadingCapabilities, setLoadingCapabilities] = useState(false);
 
-    // Fetch device capabilities on mount
+    // Receive device capabilities as props instead of fetching them
     useEffect(() => {
-        const fetchCapabilities = async () => {
-            setLoadingCapabilities(true);
-            try {
-                const capabilities = await getDeviceCapabilities();
-                setDeviceCapabilities(capabilities);
-                // If CUDA is not available and device is set to cuda, switch to cpu
-                if (!capabilities.cuda_available && (device === 'cuda' || device === 'auto')) {
-                    setDevice(capabilities.recommended_device);
-                }
-            } catch (error) {
-                console.error('Failed to fetch device capabilities:', error);
-                // Set safe defaults
-                setDeviceCapabilities({
-                    cuda_available: false,
-                    cpu_available: true,
-                    recommended_device: 'cpu'
-                });
-                if (device === 'cuda') {
-                    setDevice('cpu');
-                }
-            } finally {
-                setLoadingCapabilities(false);
+        // If deviceCapabilities are passed as props, use them
+        if (window.globalDeviceCapabilities) {
+            setDeviceCapabilities(window.globalDeviceCapabilities);
+            setLoadingCapabilities(false);
+            
+            // If CUDA is not compatible (even if available), switch to CPU
+            if (window.globalDeviceCapabilities.cuda_available && !window.globalDeviceCapabilities.cuda_compatible && (device === 'cuda' || device === 'auto')) {
+                setDevice(window.globalDeviceCapabilities.recommended_device);
             }
-        };
-        
-        if (open) {
-            fetchCapabilities();
+        } else {
+            // Fallback: fetch capabilities if not available globally
+            const fetchCapabilities = async () => {
+                setLoadingCapabilities(true);
+                try {
+                    const capabilities = await getDeviceCapabilities();
+                    setDeviceCapabilities(capabilities);
+                    window.globalDeviceCapabilities = capabilities; // Cache globally
+                    
+                    // If CUDA is not compatible (even if available), switch to CPU
+                    if (capabilities.cuda_available && !capabilities.cuda_compatible && (device === 'cuda' || device === 'auto')) {
+                        setDevice(capabilities.recommended_device);
+                    }
+                } catch (error) {
+                    console.error('Failed to fetch device capabilities:', error);
+                    // Set safe defaults
+                    const safeDefaults = {
+                        cuda_available: false,
+                        cpu_available: true,
+                        recommended_device: 'cpu',
+                        cuda_compatible: false,
+                        bfloat16_supported: false
+                    };
+                    setDeviceCapabilities(safeDefaults);
+                    window.globalDeviceCapabilities = safeDefaults;
+                    
+                    if (device === 'cuda') {
+                        setDevice('cpu');
+                    }
+                } finally {
+                    setLoadingCapabilities(false);
+                }
+            };
+            
+            if (open) {
+                fetchCapabilities();
+            }
         }
     }, [open]);
 
@@ -79,9 +98,9 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
             setDevice(initialPersona.device || 'auto');
             setMaxLength(initialPersona.maxLength || 100);
             setDoSample(initialPersona.doSample !== undefined ? initialPersona.doSample : false);
-            setEnableTTS(initialPersona.enableTTS !== undefined ? initialPersona.enableTTS : false);
+            setEnableTTS(initialPersona.enableTTS !== undefined ? initialPersona.enableTTS : true);
             setInterval(initialPersona.interval || getDefaultInterval(initialPersona.device || 'auto'));
-            setCaptureMode(initialPersona.captureMode || 'interval');
+            setCaptureMode(initialPersona.captureMode || 'manual');
         } else {
             setIsCustom(true);
             setSelectedPersonaId('custom');
@@ -92,8 +111,9 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
             setDevice('auto');
             setMaxLength(100);
             setDoSample(false); // Default to greedy sampling
+            setEnableTTS(true); // Default to enabled
             setInterval(getDefaultInterval('auto'));
-            setCaptureMode('interval');
+            setCaptureMode('manual'); // Default to manual
         }
     }, [initialPersona, agentId, personas]);
 
@@ -106,7 +126,8 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
 
     // Helper function to get default interval based on device and max_length
     const getDefaultInterval = (selectedDevice, maxResponseLength = maxLength) => {
-        const effectiveDevice = deviceCapabilities?.cuda_available ? selectedDevice : 'cpu';
+        // Use CPU if CUDA is not available or not compatible
+        const effectiveDevice = (deviceCapabilities?.cuda_available && deviceCapabilities?.cuda_compatible) ? selectedDevice : 'cpu';
         const processingTime = calculateProcessingTime(maxResponseLength, effectiveDevice);
         
         // Add buffer time (20% minimum)
@@ -116,7 +137,9 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
 
     // Get interval options based on calculated processing time
     const getIntervalOptions = () => {
-        const baseProcessingTime = calculateProcessingTime(maxLength, deviceCapabilities?.cuda_available ? device : 'cpu');
+        // Use CPU if CUDA is not available or not compatible
+        const effectiveDevice = (deviceCapabilities?.cuda_available && deviceCapabilities?.cuda_compatible) ? device : 'cpu';
+        const baseProcessingTime = calculateProcessingTime(maxLength, effectiveDevice);
         const minInterval = getDefaultInterval(device, maxLength);
         
         return [
@@ -176,7 +199,8 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
                 setDevice(selected.device || 'auto');
                 setMaxLength(selected.maxLength || 100);
                 setDoSample(selected.doSample !== undefined ? selected.doSample : true);
-                setCaptureMode(selected.captureMode || 'interval');
+                setEnableTTS(selected.enableTTS !== undefined ? selected.enableTTS : true); // Default to enabled
+                setCaptureMode(selected.captureMode || 'manual'); // Default to manual
             }
         }
     };
@@ -409,7 +433,7 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
                                     ) : (
                                         <>
                                             <SelectItem value="auto">{t('PersonaForm:autoDetect')}</SelectItem>
-                                            {deviceCapabilities?.cuda_available && (
+                                            {deviceCapabilities?.cuda_available && deviceCapabilities?.cuda_compatible && (
                                                 <SelectItem value="cuda">{t('PersonaForm:gpuCuda')}</SelectItem>
                                             )}
                                             <SelectItem value="cpu">{t('PersonaForm:cpuOnly')}</SelectItem>
@@ -417,9 +441,44 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
                                     )}
                                 </SelectContent>
                             </Select>
-                            <div className="text-xs text-muted-foreground">
-                                {loadingCapabilities ? t('PersonaForm:loadingDeviceCapabilities') : 
-                                 deviceCapabilities?.cuda_available ? t('PersonaForm:deviceCapabilitiesHelp') : t('PersonaForm:deviceCapabilitiesNoGpu')}
+                            
+                            {/* Device capability information and warnings */}
+                            <div className="text-xs space-y-1">
+                                {loadingCapabilities ? (
+                                    <div className="text-muted-foreground">{t('PersonaForm:loadingDeviceCapabilities')}</div>
+                                ) : (
+                                    <>
+                                        {/* CUDA Available and Compatible */}
+                                        {deviceCapabilities?.cuda_available && deviceCapabilities?.cuda_compatible && (
+                                            <div className="text-green-600">
+                                                ✅ GPU: {deviceCapabilities.cuda_device_name} (CUDA {deviceCapabilities.cuda_capability}) - Compatible
+                                                {deviceCapabilities.bfloat16_supported && (
+                                                    <span className="block">✨ Native bfloat16 support available for optimal performance</span>
+                                                )}
+                                                {!deviceCapabilities.bfloat16_supported && (
+                                                    <span className="block text-orange-600">⚠️ Limited bfloat16 support - performance may be reduced</span>
+                                                )}
+                                            </div>
+                                        )}
+                                        
+                                        {/* CUDA Available but Incompatible */}
+                                        {deviceCapabilities?.cuda_available && !deviceCapabilities?.cuda_compatible && (
+                                            <div className="text-orange-600 bg-orange-50 p-2 rounded border border-orange-200">
+                                                <div className="font-medium">⚠️ GPU Detected but Incompatible</div>
+                                                <div>GPU: {deviceCapabilities.cuda_device_name} (CUDA {deviceCapabilities.cuda_capability})</div>
+                                                <div className="mt-1">{deviceCapabilities.incompatibility_reason}</div>
+                                                <div className="mt-1 text-xs">Using CPU mode for compatibility.</div>
+                                            </div>
+                                        )}
+                                        
+                                        {/* No CUDA */}
+                                        {!deviceCapabilities?.cuda_available && (
+                                            <div className="text-muted-foreground">
+                                                💻 CPU mode only - No compatible GPU detected
+                                            </div>
+                                        )}
+                                    </>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -531,9 +590,9 @@ export function PersonaForm({ open, onOpenChange, persona: initialPersona, editM
                             {deviceCapabilities && !loadingCapabilities && (
                                 <div className="mt-1 text-blue-600">
                                     {t('PersonaForm:processingTimeHelp', {
-                                        time: calculateProcessingTime(maxLength, deviceCapabilities?.cuda_available ? device : 'cpu'),
+                                        time: calculateProcessingTime(maxLength, (deviceCapabilities?.cuda_available && deviceCapabilities?.cuda_compatible) ? device : 'cpu'),
                                         tokens: maxLength,
-                                        rate: deviceCapabilities?.cuda_available && device === 'cuda' ? '5' : '2'
+                                        rate: (deviceCapabilities?.cuda_available && deviceCapabilities?.cuda_compatible && device === 'cuda') ? '5' : '2'
                                     })}
                                 </div>
                             )}

@@ -23,7 +23,7 @@ import { agentStore } from "../stores/agentStore";
 import { detectionStore, addDetection, removeDetection, clearAllDetections } from "../stores/detectionStore";
 
 import { PersonaForm } from './PersonaForm';
-import { initializeAgent, getAgentStatus, processImage, shutdownAgent, cancelAgentProcessing } from '../lib/api.js';
+import { initializeAgent, getAgentStatus, processImage, shutdownAgent, cancelAgentProcessing, getDeviceCapabilities } from '../lib/api.js';
 import { compressImage, getImageMetadata } from '../lib/imageUtils.js';
 
 export default function Home() {
@@ -82,6 +82,64 @@ export default function Home() {
     const agentIntervals = useRef({});
     const [webcamAvailable, setWebcamAvailable] = useState(false);
     const [checkingWebcam, setCheckingWebcam] = useState(false);
+    
+    // Device capabilities state - checked once on app launch
+    const [deviceCapabilities, setDeviceCapabilities] = useState(null);
+    const [loadingDeviceCapabilities, setLoadingDeviceCapabilities] = useState(true);
+
+    // Check device capabilities on component mount (app launch)
+    useEffect(() => {
+        const checkDeviceCapabilities = async () => {
+            console.log('[Home] Checking device capabilities on app launch...');
+            setLoadingDeviceCapabilities(true);
+            
+            try {
+                const capabilities = await getDeviceCapabilities();
+                console.log('[Home] Device capabilities loaded:', capabilities);
+                
+                // Log user-friendly GPU status
+                if (capabilities.cuda_available) {
+                    if (capabilities.cuda_compatible) {
+                        console.log(`[Home] ✅ GPU Compatible: ${capabilities.cuda_device_name} (CUDA ${capabilities.cuda_capability})`);
+                        if (capabilities.bfloat16_supported) {
+                            console.log('[Home] ✨ Native bfloat16 support available for optimal performance');
+                        } else {
+                            console.log('[Home] ⚠️ Limited bfloat16 support - performance may be reduced');
+                        }
+                    } else {
+                        console.warn(`[Home] ⚠️ GPU Incompatible: ${capabilities.cuda_device_name} (CUDA ${capabilities.cuda_capability})`);
+                        console.warn(`[Home] Reason: ${capabilities.incompatibility_reason}`);
+                        console.warn('[Home] Falling back to CPU mode for compatibility');
+                    }
+                } else {
+                    console.log('[Home] 💻 Using CPU mode - No GPU detected');
+                }
+                
+                setDeviceCapabilities(capabilities);
+                
+                // Store globally so PersonaForm can access without re-fetching
+                window.globalDeviceCapabilities = capabilities;
+                
+            } catch (error) {
+                console.error('[Home] Failed to check device capabilities:', error);
+                // Set safe defaults
+                const safeDefaults = {
+                    cuda_available: false,
+                    cpu_available: true,
+                    recommended_device: 'cpu',
+                    cuda_compatible: false,
+                    bfloat16_supported: false,
+                    incompatibility_reason: 'Failed to check device capabilities'
+                };
+                setDeviceCapabilities(safeDefaults);
+                window.globalDeviceCapabilities = safeDefaults;
+            } finally {
+                setLoadingDeviceCapabilities(false);
+            }
+        };
+        
+        checkDeviceCapabilities();
+    }, []); // Only run once on mount
 
     // Initialize EasySpeech on component mount
     useEffect(() => {
@@ -231,10 +289,16 @@ export default function Home() {
     };
 
     useEffect(() => {
-        // Removed download progress handler as downloads are managed by Docker
+        // Don't initialize agents until device capabilities are loaded
+        if (loadingDeviceCapabilities || !deviceCapabilities) {
+            console.log("[DEBUG] Waiting for device capabilities to be loaded before initializing app...");
+            return;
+        }
+
+        console.log("[DEBUG] Device capabilities loaded, proceeding with app initialization...");
 
         const initializeApp = async () => {
-            console.log("[DEBUG] App starting...");
+            console.log("[DEBUG] App starting with device capabilities:", deviceCapabilities);
 
             // FIRST: Clear any existing intervals and reset states
             Object.values(agentIntervals.current).forEach(clearInterval);
@@ -306,7 +370,7 @@ export default function Home() {
                 }
             });
         };
-    }, []);
+    }, [loadingDeviceCapabilities, deviceCapabilities]); // Depend on device capabilities
 
     // Remove the download completion watcher as downloads are handled by Docker
     // useEffect removed

@@ -5,38 +5,34 @@ A modern web application featuring real-time webcam analysis powered by Google's
 ## 🚀 Features
 
 - **Interactive Frontend**: Modern React-based interface with real-time webcam capture
-- **AI-Powered Analysis**: Real-time image analysis using Google Gemma 3n model
+- **AI-Powered Analysis**: Image analysis using Google Gemma 3n model
 - **Persona System**: Customizable AI personalities for different analysis scenarios
 - **Webcam Integration**: Live camera feed with instant capture and analysis
 
-## 📋 Requirements
+## 📋 Development requirements
 
 - Python 3.11+
 - Node.js 18+ (for frontend development)
 - CUDA-compatible GPU (optional, but recommended)
 - Webcam/Camera device
-- 8GB+ RAM (depending on model size)
+- 64GB+ RAM
 - WSL (Windows Subsystem for Linux) for frontend builds
 
-## 🛠️ Installation & Setup
+## Docker user setup
 
-### Step 1: Backend Setup
+If you're not interested in making changes to the project and building the image from scratch, follow these steps:
 
-#### Option A: Docker (Recommended for Backend)
+### Step 1: Pull the image from docker hub
 
-```bash
-# Clone the repository
-git clone https://github.com/grctest/g3n-fastapi-webcam-docker.git
-cd g3n-fastapi-webcam-docker
+``
 
-# Build the Docker image
-docker build -t gemma3n_webcam_app .
+### Step 2: Create and run the container
 
-# Run the container
-docker run -p 8080:8080 --gpus all gemma3n_webcam_app
-```
+``
 
-#### Option B: Local Backend Installation
+## 🛠️ Developer Installation & Setup
+
+### Step 1: Setup the backend
 
 ```bash
 # Clone the repository
@@ -68,9 +64,21 @@ huggingface-cli download google/gemma-3n-E2B-it --local-dir app/models/google/ge
    ```
 3. **Exit WSL**
 
-# Run the backend
+#### Run FastAPI
+
+This will provide both the REST API access to python functions, as well as host the frontend of the web app.
 
 `uvicorn app.main:app --host 0.0.0.0 --port 8080`
+
+Or you can build the docker image manually & run it in a dev container:
+
+```bash
+# Clone the repository
+git clone https://github.com/grctest/g3n-fastapi-webcam-docker.git
+cd g3n-fastapi-webcam-docker
+docker build -t gemma3n_webcam_app .
+docker run -p 8080:8080 --gpus all gemma3n_webcam_app
+```
 
 ## 🚀 Using the Application
 
@@ -78,13 +86,13 @@ huggingface-cli download google/gemma-3n-E2B-it --local-dir app/models/google/ge
 
 1. **Open your browser** to `http://localhost:8080/`
 2. **Allow webcam access** when prompted
-3. **Select or create a persona** for AI analysis
-4. **Either Capture Frame or Enable interval captures** to take a photo and get instant AI feedback
+3. **Select or create a persona**
+4. **Either Capture Frames manually or Enable interval captures** to process the webcam footage.
 5. **View results** once the frame has been processed by Gemma 3n.
 
 ## 📖 API Documentation
 
-The backend API documentation is available at `http://localhost:8080/docs` for advanced integration.
+The backend API documentation is available at `http://localhost:8080/docs` 
 
 ## 📝 License
 
