@@ -1123,7 +1123,7 @@ export default function Home() {
                                                             code: ({children}) => <code className="bg-gray-100 px-1 rounded text-xs">{children}</code>,
                                                         }}
                                                     >
-                                                        {entry.text}
+                                                        {entry.text.length > 128 ? entry.text.substring(0, 128) + '...' : entry.text}
                                                     </ReactMarkdown>
                                                 </span>
                                                 <Button
