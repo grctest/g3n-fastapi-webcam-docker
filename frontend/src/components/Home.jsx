@@ -61,6 +61,7 @@ export default function Home() {
     const [agentDeviceTypes, setAgentDeviceTypes] = useState({}); // Track actual device types for interval adjustment
     const [agentTimers, setAgentTimers] = useState({}); // Track processing timers for each agent
     const [agentMemoryUsage, setAgentMemoryUsage] = useState({}); // Track memory usage separately
+    const [initializationComplete, setInitializationComplete] = useState(false); // Track if initial agent setup is done
     const [currentSpeech, setCurrentSpeech] = useState(null); // Track current TTS speech
     const [isSpeaking, setIsSpeaking] = useState(false); // Track if TTS is active
     const [isCopied, setIsCopied] = useState(false); // Track copy status
@@ -246,6 +247,7 @@ export default function Home() {
             clearAllDetections();  // Clear persistent detections on app start
             setAgentTimers({}); // Clear any existing timers
             setAgentMemoryUsage({}); // Clear memory usage state
+            setInitializationComplete(false); // Reset initialization flag
             console.log("[DEBUG] Cleared all existing intervals and states.");
 
             // SECOND: Ensure all agents in store are set to paused before any initialization
@@ -275,12 +277,14 @@ export default function Home() {
                 }
                 
                 console.log("[DEBUG] All agents initialized with paused state.");
+                setInitializationComplete(true); // Mark initialization as complete
                 
                 // Check webcam after agent setup
                 console.log("[DEBUG] Now checking webcam...");
                 await checkWebcam();
             } else {
                 console.log("[DEBUG] No agents found in store. Checking webcam directly...");
+                setInitializationComplete(true); // Mark as complete even with no agents
                 await checkWebcam();
             }
         };
@@ -358,6 +362,9 @@ export default function Home() {
             clearInterval(agentIntervals.current[agent.id]);
             delete agentIntervals.current[agent.id];
         }
+        
+        // Refresh statuses of remaining agents
+        setTimeout(() => refreshAgentStatuses(), 500); // Small delay to let backend settle
         
         // Clear any errors or results for this agent
         setAgentErrors(prev => {
@@ -450,6 +457,9 @@ export default function Home() {
         // Update agentStatuses to reflect change immediately
         setAgentStatuses(prev => ({ ...prev, [agent.id]: isPausing ? 'paused' : 'running' }));
         console.log(`[DEBUG] Agent ${agent.id} (${agent.label}) is now ${isPausing ? 'paused' : 'active'} in UI.`);
+        
+        // Refresh status after toggle to ensure accuracy
+        setTimeout(() => refreshAgentStatuses(agent.id), 100);
     };
 
     // Manual capture handler for agents with captureMode === 'manual'
@@ -547,6 +557,58 @@ export default function Home() {
         }
     };
 
+    // Smart status updates - only when needed, not on a timer
+    const refreshAgentStatuses = useCallback(async (specificAgentId = null) => {
+        const agentsToCheck = specificAgentId ? 
+            agents.filter(agent => agent.id === specificAgentId) : 
+            agents;
+            
+        if (agentsToCheck.length === 0) return;
+
+        const statusMap = {};
+        const readinessMap = {};
+        const deviceTypeMap = {};
+        
+        for (const agent of agentsToCheck) {
+            try {
+                const result = await getAgentStatus(agent.id);
+                if (result.success) {
+                    statusMap[agent.id] = result.data.status;
+                    readinessMap[agent.id] = result.data.ready || false;
+                    deviceTypeMap[agent.id] = result.data.actual_device || 'cpu';
+                    
+                    if (result.data.memory_usage_mb) {
+                        setImageProcessingStats(prev => ({
+                            ...prev,
+                            [agent.id]: {
+                                ...prev[agent.id],
+                                memory_usage_mb: result.data.memory_usage_mb
+                            }
+                        }));
+                        setAgentMemoryUsage(prev => ({
+                            ...prev,
+                            [agent.id]: result.data.memory_usage_mb
+                        }));
+                    }
+                } else {
+                    statusMap[agent.id] = 'stopped';
+                    readinessMap[agent.id] = false;
+                    deviceTypeMap[agent.id] = 'cpu';
+                }
+            } catch (error) {
+                console.error(`[DEBUG] Error fetching status for agent ${agent.id}:`, error);
+                statusMap[agent.id] = 'error';
+                readinessMap[agent.id] = false;
+                deviceTypeMap[agent.id] = 'cpu';
+            }
+        }
+        
+        // Update states with new data
+        setAgentStatuses(prev => ({ ...prev, ...statusMap }));
+        setAgentReadiness(prev => ({ ...prev, ...readinessMap }));
+        setAgentDeviceTypes(prev => ({ ...prev, ...deviceTypeMap }));
+    }, [agents]);
+
     const runAgent = useCallback(async (agent, isManualCapture = false) => {
         // For interval mode agents, check if paused. Manual capture agents can always run
         if (agent.paused && !isManualCapture) {
@@ -554,7 +616,8 @@ export default function Home() {
             return;
         }
         
-        // Check if agent is ready for inference
+        // Check if agent is ready for inference - refresh status first
+        await refreshAgentStatuses(agent.id);
         if (!agentReadiness[agent.id]) {
             console.log(`[DEBUG] runAgent: Agent ${agent.id} is not ready yet. Skipping execution.`);
             return;
@@ -694,7 +757,7 @@ export default function Home() {
             
             setTimeout(() => setHighlightedAgentId(null), 500);
         }
-    }, [t, agentProcessing, agentReadiness, speakText]); // Include speakText in dependencies
+    }, [t, agentProcessing, agentReadiness, speakText, refreshAgentStatuses]); // Include speakText and refreshAgentStatuses in dependencies
 
 
     // Effect to manage agent intervals
@@ -804,7 +867,7 @@ export default function Home() {
     }, [agentProcessing]);
 
 
-    // Fetch agent statuses from FastAPI
+    // Fetch agent statuses from FastAPI - only after initialization is complete
     useEffect(() => {
         async function fetchStatuses() {
             const statusMap = {};
@@ -853,10 +916,10 @@ export default function Home() {
             setAgentDeviceTypes(deviceTypeMap);
         }
         
-        if (agents.length > 0) {
+        if (agents.length > 0 && initializationComplete) {
             fetchStatuses();
         }
-    }, [agents]);
+    }, [agents, initializationComplete]);
 
 
     return (
