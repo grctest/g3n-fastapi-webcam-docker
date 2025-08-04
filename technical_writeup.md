@@ -81,6 +81,12 @@ A major advantage of this change is that we never have to prompt the user to dow
 
 Initially I was just checking for CUDA support, but this was insufficient to be able to run the Gemma 3n model. We now check for a certain minimum generation of GPU for bfloat16 computation capabilities before we offer to compute gemma 3n vison tasks on the user's GPU. Given that I don't have a compatible GPU I was unable to dial in the GPU tokens/second, so the interval timings for GPU usage may need improvement.
 
+### GitHub action limitations
+
+It's not possible to generate the docker image in github actions with the free tier, only the pro/team github account membership provides sufficient disk space to build the docker image in github actions.
+
+To overcome this issue you have to build it locally in your dev environment following the developer instructions in the readme.
+
 ## Why these technical choices were the right ones
 
 The python backend introduces support for many different models, you could easily swap out E2B-it for E4B-it (or your own finetuned models).

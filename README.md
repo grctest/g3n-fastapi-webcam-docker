@@ -24,11 +24,11 @@ If you're not interested in making changes to the project and building the image
 
 ### Step 1: Pull the image from docker hub
 
-``
+NOTE: Docker hub image not yet available - you must build it locally for the time being
 
 ### Step 2: Create and run the container
 
-``
+NOTE: Docker hub image not yet available - you must build it locally for the time being
 
 ## 🛠️ Developer Installation & Setup
 
