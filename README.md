@@ -1,3 +1,6 @@
+<img width="1080" height="606" alt="c4ed229fe105b5bad4e6ca69becaa777" src="https://github.com/user-attachments/assets/8e6de923-8dd3-4ee6-9d42-48a06e6cef38" />
+
+
 # Gemma 3n Webcam Analysis Application
 
 A modern web application featuring real-time webcam analysis powered by Google's Gemma 3n AI model. The frontend provides an intuitive interface for webcam capture, AI-powered image analysis, and persona-based interactions, with a backend API for model management.
