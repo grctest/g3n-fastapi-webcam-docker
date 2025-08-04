@@ -33,7 +33,7 @@ cd g3n-fastapi-webcam-docker
 docker build -t gemma3n_webcam_app .
 
 # Run the container
-docker run -p 8080:8080 --gpus all --device /dev/video0 gemma-webcam-app
+docker run -p 8080:8080 --gpus all gemma3n_webcam_app
 ```
 
 #### Option B: Local Backend Installation

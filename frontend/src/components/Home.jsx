@@ -1393,32 +1393,37 @@ export default function Home() {
                             {/* Metadata Stats */}
                             <div className="mt-4 p-4 bg-blue-50 border-2 border-blue-200 rounded-lg">
                                 <h4 className="font-semibold text-sm text-blue-800 mb-3 border-b border-blue-300 pb-2">
-                                    📊 Processing Details
+                                    📊 {t('Home:processingDetails')}
                                 </h4>
                                 <div className="grid grid-cols-1 gap-2 text-xs">
                                     {detectionDialog.agentName && (
                                         <div className="flex justify-between items-center">
-                                            <span className="font-medium text-blue-700">🤖 Agent:</span>
+                                            <span className="font-medium text-blue-700">🤖 {t('Home:agentLabel')}</span>
                                             <div className="flex items-center gap-2">
                                                 <span className="text-blue-600">
                                                     {detectionDialog.agentName}
                                                 </span>
-                                                {detectionDialog.agentId && (
+                                                {detectionDialog.agentId && agents.find(a => a.id === detectionDialog.agentId) && (
                                                     <Button
                                                         size="sm"
                                                         variant="outline"
                                                         className="h-6 px-2 text-xs text-blue-600 border-blue-300 hover:bg-blue-50"
                                                         onClick={() => handleViewAgent(detectionDialog.agentId)}
                                                     >
-                                                        View Agent
+                                                        {t('Home:viewAgent')}
                                                     </Button>
+                                                )}
+                                                {detectionDialog.agentId && !agents.find(a => a.id === detectionDialog.agentId) && (
+                                                    <span className="text-xs text-gray-500 italic">
+                                                        {t('Home:agentDeleted')}
+                                                    </span>
                                                 )}
                                             </div>
                                         </div>
                                     )}
                                     {detectionDialog.timestamp && (
                                         <div className="flex justify-between">
-                                            <span className="font-medium text-blue-700">📅 Captured:</span>
+                                            <span className="font-medium text-blue-700">📅 {t('Home:captured')}</span>
                                             <span className="text-blue-600">
                                                 {new Date(detectionDialog.timestamp).toLocaleString()}
                                             </span>
@@ -1426,7 +1431,7 @@ export default function Home() {
                                     )}
                                     {detectionDialog.processingTime && (
                                         <div className="flex justify-between">
-                                            <span className="font-medium text-blue-700">⚡ Processing Time:</span>
+                                            <span className="font-medium text-blue-700">⚡ {t('Home:processingTime')}</span>
                                             <span className="text-blue-600">
                                                 {(detectionDialog.processingTime / 1000).toFixed(2)}{t('Home:timeUnit')}
                                             </span>
@@ -1434,7 +1439,7 @@ export default function Home() {
                                     )}
                                     {detectionDialog.memoryUsage && (
                                         <div className="flex justify-between">
-                                            <span className="font-medium text-blue-700">💾 RAM Usage:</span>
+                                            <span className="font-medium text-blue-700">💾 {t('Home:ramUsage')}</span>
                                             <span className="text-blue-600">
                                                 {Math.round(detectionDialog.memoryUsage)}{t('Home:memoryUnit')}
                                             </span>
